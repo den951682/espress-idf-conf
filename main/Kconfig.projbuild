@@ -1,0 +1,16 @@
+menu "Conf Configuration"
+	menu "Bt server"
+		config BT_SERVER_NAME
+    		string "Bluetooth Name"
+    		default "Conf server"
+    		help
+			Bluetooth name to connect to.
+		config BT_SSP_IO_CAP
+            int "SSP IO Capability (0=DisplayOnly,1=DisplayYesNo,2=KeyboardOnly,3=NoInputNoOutput)"
+    		range 0 3
+    		default 1
+    	config BT_SPP_SECURE_MODE
+            bool "Require authentication for SPP link"
+            default y
+	endmenu
+endmenu

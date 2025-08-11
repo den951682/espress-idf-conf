@@ -1,0 +1,59 @@
+# === Build artifacts ===
+/build/
+/build-*/
+/**/build/
+/**/build-*/
+
+# === ESP-IDF generated configs ===
+sdkconfig
+sdkconfig.old
+sdkconfig.*
+!sdkconfig.defaults
+!sdkconfig.ci
+
+# Component manager cache (не комітимо; тримаємо лише dependencies.lock)
+# https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/components/esp_component_manager.html
+/managed_components/
+
+# === CMake/Ninja ===
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+compile_commands.json
+.ninja_deps
+.ninja_log
+
+# === IDE files ===
+# VS Code
+.vscode/
+# Eclipse (Espressif IDE)
+.project
+.cproject
+.settings/
+*.launch
+# CLion/IntelliJ
+.idea/
+.run/
+# clangd
+/.clangd/
+.cache/
+.clangd
+.clang-format
+
+# === Python virtualenv / caches ===
+.venv/
+venv/
+env/
+.env
+__pycache__/
+*.pyc
+
+# === OS noise ===
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# === Logs / misc ===
+*.log
+.gdb_history
+tags
