@@ -7,9 +7,11 @@
 #include "esp_system.h"
 #include "nvs_flash.h"
 
+#include "serial_line_reader.hpp"
 #include "bt_spp_server.hpp"
 #include "fd_connection.hpp"
 
+SerialLineReader reader;
 BtSppServer bt;
 FdConnection* g_conn = nullptr;
 
@@ -46,4 +48,8 @@ static void start_bt() {
 extern "C" void app_main(void) {
     start_nvs();
     start_bt();
+    reader.start([](const std::string& line) {
+        ESP_LOGI("MAIN", "Got line: %s", line.c_str());
+        if(g_conn != nullptr) g_conn->sendLine(line);
+    });
 }	

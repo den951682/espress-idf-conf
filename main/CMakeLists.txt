@@ -6,6 +6,7 @@ idf_component_register(
       main.cpp          # list the source files of this component
       bt_spp_server.cpp
       fd_connection.cpp
+      serial_line_reader.cpp
     INCLUDE_DIRS .      # optional, add here public include directories
     PRIV_INCLUDE_DIRS   # optional, add here private include directories
     REQUIRES            # optional, list the public requirements (component names)
@@ -14,4 +15,5 @@ idf_component_register(
       bt
       nvs_flash
       vfs
+      driver
 )
