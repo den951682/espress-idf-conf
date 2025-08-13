@@ -6,6 +6,7 @@
 #include <mutex>
 #include <atomic>
 #include "esp_err.h"
+#include "protocol.hpp"
 
 extern "C" {
 #include "freertos/FreeRTOS.h"
@@ -48,7 +49,9 @@ private:
     void moveFrom(FdConnection& other) noexcept;
 
     ssize_t writeAll(const uint8_t* data, size_t len);
+    static std::string toHex(const std::vector<uint8_t>& data);
 
+    Protocol* protocol;
     std::atomic<int> _fd{-1};
     const char* _taskName;
     uint16_t _stack;
@@ -56,6 +59,7 @@ private:
     BaseType_t _core;
 
     std::atomic<bool> _running{false};
+    std::atomic<bool> _guarded{false};
     TaskHandle_t _task{nullptr};
 
     std::mutex _writeMtx;

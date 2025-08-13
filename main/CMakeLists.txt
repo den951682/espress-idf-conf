@@ -7,6 +7,7 @@ idf_component_register(
       bt_spp_server.cpp
       fd_connection.cpp
       serial_line_reader.cpp
+      ecdh_aes_protocol.cpp
     INCLUDE_DIRS .      # optional, add here public include directories
     PRIV_INCLUDE_DIRS   # optional, add here private include directories
     REQUIRES            # optional, list the public requirements (component names)

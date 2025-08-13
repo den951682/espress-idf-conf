@@ -5,8 +5,12 @@
 #include <cstring>
 #include <cerrno>
 #include <unistd.h>
+#include <sstream>
+#include <iomanip>
 
+#include "ecdh_aes_protocol.hpp"
 #include "esp_log.h"
+
 
 namespace {
     static const char* TAG = "FdConnection";
@@ -39,6 +43,8 @@ esp_err_t FdConnection::start() {
     }
     if (_running.load()) return ESP_OK;
     _running.store(true);
+    _guarded.store(false);
+    protocol = new EcdhAesProtocol();
 
     BaseType_t ok = xTaskCreatePinnedToCore(&FdConnection::taskTrampoline,
                                             _taskName,
@@ -135,23 +141,39 @@ void FdConnection::taskLoop() {
 
         ssize_t n = ::read(fd, buf.data(), buf.size());
         if (n > 0) {
-            accum.insert(accum.end(), buf.begin(), buf.begin() + n);
+			if(_guarded) {
+				protocol -> appendReceived(buf.data(), buf.size());
+			} else {
+            	accum.insert(accum.end(), buf.begin(), buf.begin() + n);
 
-            size_t start = 0;
-            for (size_t i = 0; i < accum.size(); i++) {
-                if (accum[i] == '\n') {
+            	size_t start = 0;
+           		for (size_t i = 0; i < accum.size(); i++) {
+               	 if (accum[i] == '\n') {
                 	std::vector<uint8_t> lineBytes(accum.begin() + start, accum.begin() + i);
                     if (!lineBytes.empty() && lineBytes.back() == '\r') {
                         lineBytes.pop_back();
                     }    
                     std::string line(reinterpret_cast<const char*>(lineBytes.data()), lineBytes.size());
-               
+                    if(line.ends_with("guard")) {
+					  protocol->init(
+    			[this](const uint8_t* data, size_t len) {
+       					 	FdConnection::sendBytes(data, len);
+    					 },
+    			 [](std::vector<uint8_t> msg) {
+       					 ESP_LOGI("FdConnection", "Got message size=%u, data=%s", msg.size(), toHex(msg).c_str());
+   						 }
+					  );
+					  _guarded.store(true); 
+					  accum.erase(accum.begin(), accum.begin() + i + 1);
+					  protocol -> appendReceived(accum.data(), accum.size());
+					  break;						
+					}
                     if (_onLine) {
                         _onLine(line);
                     }
                     start = i + 1;
                 }
-            }
+           	   }
 
             if (start > 0) {
                 accum.erase(accum.begin(), accum.begin() + start);
@@ -163,7 +185,7 @@ void FdConnection::taskLoop() {
             }
             continue;
         }
-
+}
         if (n == 0) {
             vTaskDelay(1);
 			continue;
@@ -190,4 +212,13 @@ void FdConnection::moveFrom(FdConnection& other) noexcept {
     _running.store(other._running.exchange(false));
     _task = other._task; other._task = nullptr;
     _onLine = std::move(other._onLine);
+}
+
+std::string FdConnection::toHex(const std::vector<uint8_t>& data) {
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (auto b : data) {
+        oss << std::setw(2) << static_cast<int>(b);
+    }
+    return oss.str();
 }
