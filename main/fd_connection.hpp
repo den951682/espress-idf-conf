@@ -60,5 +60,4 @@ private:
 
     std::mutex _writeMtx;
     LineCallback _onLine;
-    std::string _accum;
 };

@@ -1,5 +1,6 @@
 #include "fd_connection.hpp"
 
+#include <sys/_stdint.h>
 #include <vector>
 #include <cstring>
 #include <cerrno>
@@ -125,29 +126,40 @@ void FdConnection::taskTrampoline(void* arg) {
 
 void FdConnection::taskLoop() {
     ESP_LOGI(TAG, "read task started (fd=%d)", _fd.load());
-    std::vector<char> buf(512);
-
+    std::vector<uint8_t> buf(512);
+    std::vector<uint8_t> accum;
+    accum.reserve(MAX_ACCUM);
     while (_running.load()) {
         int fd = _fd.load();
         if (fd < 0) break; 
 
         ssize_t n = ::read(fd, buf.data(), buf.size());
         if (n > 0) {
-            _accum.append(buf.data(), static_cast<size_t>(n));
+            accum.insert(accum.end(), buf.begin(), buf.begin() + n);
 
-            size_t pos = 0;
-            for (;;) {
-                size_t nl = _accum.find('\n', pos);
-                if (nl == std::string::npos) { _accum.erase(0, pos); break; }
-                std::string line = _accum.substr(pos, nl - pos);
-                if (!line.empty() && line.back() == '\n') line.pop_back();
-                if (_onLine) { _onLine(line); }
-                pos = nl + 1;
+            size_t start = 0;
+            for (size_t i = 0; i < accum.size(); i++) {
+                if (accum[i] == '\n') {
+                	std::vector<uint8_t> lineBytes(accum.begin() + start, accum.begin() + i);
+                    if (!lineBytes.empty() && lineBytes.back() == '\r') {
+                        lineBytes.pop_back();
+                    }    
+                    std::string line(reinterpret_cast<const char*>(lineBytes.data()), lineBytes.size());
+               
+                    if (_onLine) {
+                        _onLine(line);
+                    }
+                    start = i + 1;
+                }
             }
 
-            if (_accum.size() > MAX_ACCUM) {
-                ESP_LOGW(TAG, "Dropping %zu bytes of unterminated line", _accum.size());
-                _accum.clear();
+            if (start > 0) {
+                accum.erase(accum.begin(), accum.begin() + start);
+            }
+
+            if (accum.size() > MAX_ACCUM) {
+                ESP_LOGW(TAG, "Dropping %zu bytes of unterminated line", accum.size());
+                accum.clear();
             }
             continue;
         }
@@ -178,5 +190,4 @@ void FdConnection::moveFrom(FdConnection& other) noexcept {
     _running.store(other._running.exchange(false));
     _task = other._task; other._task = nullptr;
     _onLine = std::move(other._onLine);
-    _accum = std::move(other._accum);
 }
