@@ -8,8 +8,10 @@
 #include "nvs_flash.h"
 
 #include "bt_spp_server.hpp"
+#include "fd_connection.hpp"
 
 BtSppServer bt;
+FdConnection* g_conn = nullptr;
 
 static void start_nvs() {
 	esp_err_t ret = nvs_flash_init();
@@ -27,8 +29,16 @@ static void start_bt() {
 
     bt.setOnFdReady([](int fd){
         ESP_LOGI("APP", "FD ready: %d", fd);
-        const char msg[] = "Hello from ESP32!\n";
-        write(fd, msg, strlen(msg));        
+        delete g_conn; g_conn = nullptr;
+        g_conn = new FdConnection(fd);
+        g_conn->setLineCallback([](const std::string& line){
+           ESP_LOGI("APP", "RX line: %s", line.c_str());
+           g_conn->sendLine("OK");
+        });
+        if (g_conn->start() != ESP_OK) { 
+		   ESP_LOGE("APP", "start failed"); 
+		   delete g_conn; g_conn = nullptr;
+	    }          
     });
     bt.start();
 }
