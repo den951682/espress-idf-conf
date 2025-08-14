@@ -7,7 +7,9 @@ idf_component_register(
       bt_spp_server.cpp
       fd_connection.cpp
       serial_line_reader.cpp
-      ecdh_aes_protocol.cpp
+      protocol/ecdh_aes_protocol.cpp
+      protocol/passphrase_aes_protocol.cpp
+      crypto_ecdh_aes.cpp
     INCLUDE_DIRS .      # optional, add here public include directories
     PRIV_INCLUDE_DIRS   # optional, add here private include directories
     REQUIRES            # optional, list the public requirements (component names)
@@ -17,4 +19,5 @@ idf_component_register(
       nvs_flash
       vfs
       driver
+      mbedtls
 )

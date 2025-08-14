@@ -6,7 +6,7 @@
 #include <mutex>
 #include <atomic>
 #include "esp_err.h"
-#include "protocol.hpp"
+#include "protocol/protocol.hpp"
 
 extern "C" {
 #include "freertos/FreeRTOS.h"

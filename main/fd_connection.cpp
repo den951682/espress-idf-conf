@@ -8,7 +8,7 @@
 #include <sstream>
 #include <iomanip>
 
-#include "ecdh_aes_protocol.hpp"
+#include "protocol/passphrase_aes_protocol.hpp"
 #include "esp_log.h"
 
 
@@ -44,7 +44,7 @@ esp_err_t FdConnection::start() {
     if (_running.load()) return ESP_OK;
     _running.store(true);
     _guarded.store(false);
-    protocol = new EcdhAesProtocol();
+    protocol = new PassphraseAesProtocol();
 
     BaseType_t ok = xTaskCreatePinnedToCore(&FdConnection::taskTrampoline,
                                             _taskName,
