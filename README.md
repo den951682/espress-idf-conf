@@ -9,3 +9,7 @@ Please check [ESP-IDF docs](https://docs.espressif.com/projects/esp-idf/en/lates
 Unless required by applicable law or agreed to in writing, this
 software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied.*
+
+
+run protogen.bat (in cmd not in idf terminal)
+nanopb.h 141 line add import for #include "descriptor.pb.h" #include "google/protobuf/descriptor.pb.h" (at files begin)

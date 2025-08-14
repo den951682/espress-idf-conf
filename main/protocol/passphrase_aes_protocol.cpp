@@ -3,6 +3,9 @@
 #include <cstring>
 #include <stdint.h>
 #include <string>
+#include "pb_decode.h"
+#include "pb_encode.h"
+#include "proto-model/Handshake.pb.h"
 
 static const char* TAG = "PassphraseAesProtocol";
 
@@ -41,7 +44,7 @@ void PassphraseAesProtocol::appendReceived(const uint8_t* data, size_t len) {
         ESP_LOG_BUFFER_HEX(TAG, decrypted.data(), decrypted.size());
         
         if (!handshakeReceived) {
-            if (parseHandshake(frame)) {
+            if (parseHandshake(decrypted)) {
                 handshakeReceived = true;
                 xSemaphoreGive(sendReady);
                 ESP_LOGI(TAG, "Handshake complete");
@@ -75,8 +78,19 @@ void PassphraseAesProtocol::sendHandshake() {
 	writeCb(&headerLen, 1);
 	
 	ESP_LOGI(TAG, "Sending HANDSHAKE");
-    const char* msg = "HANDSHAKE";
-    std::vector<uint8_t> msg_vec(msg, msg + strlen(msg));
+     
+    pModel_HandshakeRequest req = pModel_HandshakeRequest_init_zero;
+    strncpy(req.text, "HANDSHAKE", sizeof(req.text) - 1);
+
+    uint8_t buffer[pModel_HandshakeRequest_size];
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    if (!pb_encode(&stream, pModel_HandshakeRequest_fields, &req)) {
+        ESP_LOGE(TAG, "Handshake encode failed: %s", PB_GET_ERROR(&stream));
+        sendCode(5);
+    }  
+     
+    size_t total_len = stream.bytes_written;
+    std::vector<uint8_t> msg_vec(buffer, buffer + total_len);
     std::vector<uint8_t> enc = crypto.encrypt_data_whole(msg_vec);
     uint8_t len = enc.size();
     writeCb(&len, 1);
@@ -84,10 +98,15 @@ void PassphraseAesProtocol::sendHandshake() {
 }
 
 bool PassphraseAesProtocol::parseHandshake(const std::vector<uint8_t>& frame) {
-    // TODO: тут розбір ключа, встановлення AES
-    // зараз просто перевірка тексту
-    std::string text(frame.begin(), frame.end());
-    return (text == "HANDSHAKE_OK");
+    pModel_HandshakeResponse resp = pModel_HandshakeResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(frame.data(), frame.size());
+    if (!pb_decode(&istream, pModel_HandshakeResponse_fields, &resp)) {
+        ESP_LOGE(TAG, "Handshake decode failed: %s", PB_GET_ERROR(&istream));
+        return false;
+    }
+
+    ESP_LOGI(TAG, "Handshake text: %s", resp.text);
+    return strcmp(resp.text, "HANDSHAKE") == 0;
 }
 
 std::vector<uint8_t> PassphraseAesProtocol::encryptFrame(const std::vector<uint8_t>& plain) {

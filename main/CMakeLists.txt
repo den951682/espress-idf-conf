@@ -1,6 +1,9 @@
 # See the build system documentation in IDF programming guide
 # for more information about component CMakeLists.txt files.
 
+file(GLOB PROTO_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/proto-model/*.pb.c")
+file(GLOB PROTO_GOOGLE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/proto-model/google/protobuf/*.pb.c")
+
 idf_component_register(
     SRCS
       main.cpp          # list the source files of this component
@@ -10,7 +13,12 @@ idf_component_register(
       protocol/ecdh_aes_protocol.cpp
       protocol/passphrase_aes_protocol.cpp
       crypto_ecdh_aes.cpp
-    INCLUDE_DIRS .      # optional, add here public include directories
+      ${PROTO_GOOGLE_SRCS}  # <-- Google descriptor first
+      ${PROTO_SRCS}         # <-- Then all the rest
+    INCLUDE_DIRS 
+      .     
+      proto-model
+      proto-model/google/protobuf
     PRIV_INCLUDE_DIRS   # optional, add here private include directories
     REQUIRES            # optional, list the public requirements (component names)
       bt

@@ -57,3 +57,6 @@ ehthumbs.db
 *.log
 .gdb_history
 tags
+
+/main/proto-model/
+/third_party/

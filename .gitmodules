@@ -1,0 +1,3 @@
+[submodule "protobufModel"]
+	path = protobufModel
+	url = https://github.com/den951682/protobufModel.git
