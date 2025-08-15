@@ -7,6 +7,7 @@ file(GLOB PROTO_GOOGLE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/proto-model/google/prot
 idf_component_register(
     SRCS
       main.cpp          # list the source files of this component
+      message_type.cpp
       bt_spp_server.cpp
       fd_connection.cpp
       serial_line_reader.cpp

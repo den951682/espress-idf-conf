@@ -61,6 +61,7 @@ bool PassphraseAesProtocol::send(const uint8_t* data, size_t len) {
         ESP_LOGW(TAG, "Send blocked: handshake not complete");
         return false;
     }
+    xSemaphoreGive(sendReady);
     auto encrypted = encryptFrame({data, data + len});
     uint8_t hdr = encrypted.size();
     writeCb(&hdr, 1);
@@ -110,8 +111,9 @@ bool PassphraseAesProtocol::parseHandshake(const std::vector<uint8_t>& frame) {
 }
 
 std::vector<uint8_t> PassphraseAesProtocol::encryptFrame(const std::vector<uint8_t>& plain) {
-    // TODO: AES шифрування
-    return plain; // поки без шифру
+	std::vector<uint8_t> enc = crypto.encrypt_data_whole(plain);
+    if(enc.empty()) sendCode(2);
+    return enc; 
 }
 
 std::vector<uint8_t> PassphraseAesProtocol::decryptFrame(const std::vector<uint8_t>& enc) {

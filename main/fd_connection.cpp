@@ -34,6 +34,8 @@ FdConnection& FdConnection::operator=(FdConnection&& other) noexcept {
 
 void FdConnection::setLineCallback(LineCallback cb) { _onLine = std::move(cb); }
 
+void FdConnection::setCloseCallback(CloseCallback cb) { _closeCB = std::move(cb); }
+
 bool FdConnection::isRunning() const { return _running.load(); }
 
 esp_err_t FdConnection::start() {
@@ -56,6 +58,7 @@ esp_err_t FdConnection::start() {
                                             _core);
     if (ok != pdPASS) {
         _running.store(false);
+        _closeCB();
         _task = nullptr;
         ESP_LOGE(TAG, "Failed to create read task (err=%ld)", (long)ok);
         return ESP_FAIL;
@@ -86,7 +89,8 @@ ssize_t FdConnection::writeAll(const uint8_t* data, size_t len) {
     size_t total = 0;
     int fd = _fd.load();
     if (fd < 0) return -1;
-
+    ESP_LOGI(TAG, "SEND BYTES");
+    ESP_LOG_BUFFER_HEX(TAG, data, len);
     while (total < len) {
         ssize_t n = ::write(fd, data + total, len - total);
         if (n > 0) {
@@ -202,7 +206,7 @@ void FdConnection::taskLoop() {
         ESP_LOGE(TAG, "read() failed: errno=%d (%s)", errno, strerror(errno));
         break;
     }
-
+    _closeCB();
     _running.store(false);
     int fd = _fd.exchange(-1);
     if (fd >= 0) { ::close(fd); }

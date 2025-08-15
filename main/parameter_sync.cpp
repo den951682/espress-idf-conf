@@ -3,6 +3,7 @@
 #include "pb.h"
 #include "pb_encode.h"
 #include "pb_decode.h"
+#include "message_type.cpp"
 
 enum class ParamSetType : uint8_t {
     SetInt     = 0x04,
@@ -15,8 +16,7 @@ using HandlerFunc = bool(*)(const uint8_t*, size_t);
 
 class ParameterSync {
 public:
-    ParameterSync(paramstore::ParameterStore& store, FdConnection& connection)
-        : store_(store), connection_(connection)
+    ParameterSync(paramstore::ParameterStore& store) : store_(store)
     {
         store_.onAnyChange([this](uint32_t id, const paramstore::Value& val){
             sendParameterValue(id, val);
@@ -76,39 +76,43 @@ public:
     }
 }
 
-
     void sendParameterValue(uint32_t id, const paramstore::Value& val) {
         uint8_t buffer[128];
-        pb_ostream_t ostream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+        pb_ostream_t ostream = pb_ostream_from_buffer(buffer + 1, sizeof(buffer) - 1);
 
         if (std::holds_alternative<int32_t>(val)) {
+			buffer[0] = static_cast<uint8_t>(MessageType::Int);
             pModel_IntParameter msg;
             if (!toValueMessage(id, msg)) return;
             pb_encode(&ostream, pModel_IntParameter_fields, &msg);
         }
         else if (std::holds_alternative<float>(val)) {
+			buffer[0] = static_cast<uint8_t>(MessageType::Float);
             pModel_FloatParameter msg;
             if (!toValueMessage(id, msg)) return;
             pb_encode(&ostream, pModel_FloatParameter_fields, &msg);
         }
         else if (std::holds_alternative<std::string>(val)) {
+			buffer[0] = static_cast<uint8_t>(MessageType::String);
             pModel_StringParameter msg;
             if (!toValueMessage(id, msg)) return;
             pb_encode(&ostream, pModel_StringParameter_fields, &msg);
         }
         else if (std::holds_alternative<bool>(val)) {
+			buffer[0] = static_cast<uint8_t>(MessageType::Boolean);
             pModel_BooleanParameter msg;
             if (!toValueMessage(id, msg)) return;
             pb_encode(&ostream, pModel_BooleanParameter_fields, &msg);
         }
-
-        connection_.sendBytes(buffer, ostream.bytes_written);
+        if(connection_) {
+          	connection_ -> enqueueSend(buffer, ostream.bytes_written + 1);
+        }
     }
-
+ 
     void sendParameterInfo(uint32_t id, const paramstore::Meta& meta) {
-        uint8_t buffer[128];
-        pb_ostream_t ostream = pb_ostream_from_buffer(buffer, sizeof(buffer));
-
+        uint8_t buffer[512];
+        pb_ostream_t ostream = pb_ostream_from_buffer(buffer + 1, sizeof(buffer) - 1);
+		buffer[0] = static_cast<uint8_t>(MessageType::ParameterInfo);
         pModel_ParameterInfo out = pModel_ParameterInfo_init_zero;
         out.id = meta.id;
         out.editable = meta.editable;
@@ -125,7 +129,10 @@ public:
         memcpy(out.description.bytes, meta.description.data(), n);
 
 		pb_encode(&ostream, pModel_ParameterInfo_fields, &out);
-        connection_.sendBytes(buffer, ostream.bytes_written);
+		if(connection_) {
+			ESP_LOG_BUFFER_HEX(TAG, buffer, ostream.bytes_written + 1);
+        	connection_ -> enqueueSend(buffer, ostream.bytes_written + 1);
+        }
     }
 
     void sendAllParameters() {
@@ -140,13 +147,20 @@ public:
             sendParameterInfo(meta.id, meta);
         }
     }
+    
+    void setConnection(FdConnection* connection) {
+		connection_ = connection;
+	}
+	
+	void removeConnection() {
+		connection_ = nullptr;
+	}
 
 private:
     static constexpr const char* TAG = "ParameterSync";
 
     paramstore::ParameterStore& store_;
-    FdConnection& connection_;
-    
+    FdConnection* connection_;
     
     bool toValueMessage(uint32_t id, pModel_IntParameter &msg) const {
         const paramstore::Entry &e = store_.get(id);
