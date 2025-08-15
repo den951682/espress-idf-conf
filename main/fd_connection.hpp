@@ -13,6 +13,10 @@ extern "C" {
 #include "freertos/task.h"
 }
 
+struct SendItem {
+    std::vector<uint8_t> data;
+};
+
 
 class FdConnection {
 public:
@@ -41,17 +45,21 @@ public:
     ssize_t sendBytes(const uint8_t* data, size_t len);
     ssize_t sendString(const std::string& s);
     ssize_t sendLine(const std::string& s); 
+    void enqueueSend(const uint8_t* data, size_t len);
 
 private:
     static constexpr size_t MAX_ACCUM = 8 * 1024;
     static void taskTrampoline(void* arg);
     void taskLoop();
+    void startSendTask();
+    static void sendTask(void* arg);
     void moveFrom(FdConnection& other) noexcept;
 
     ssize_t writeAll(const uint8_t* data, size_t len);
     static std::string toHex(const std::vector<uint8_t>& data);
 
     Protocol* protocol;
+    QueueHandle_t sendQueue;
     std::atomic<int> _fd{-1};
     const char* _taskName;
     uint16_t _stack;

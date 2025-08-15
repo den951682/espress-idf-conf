@@ -45,7 +45,8 @@ esp_err_t FdConnection::start() {
     _running.store(true);
     _guarded.store(false);
     protocol = new PassphraseAesProtocol();
-
+	sendQueue = xQueueCreate(16, sizeof(SendItem*));
+    startSendTask();
     BaseType_t ok = xTaskCreatePinnedToCore(&FdConnection::taskTrampoline,
                                             _taskName,
                                             _stack,
@@ -121,6 +122,11 @@ ssize_t FdConnection::sendLine(const std::string& s) {
     const char nl = '\n';
     ssize_t b = writeAll(reinterpret_cast<const uint8_t*>(&nl), 1);
     return (b == 1) ? (a + 1) : -1;
+}
+
+void FdConnection::enqueueSend(const uint8_t* data, size_t len) {
+    auto* item = new SendItem{std::vector<uint8_t>(data, data + len)};
+    xQueueSend(sendQueue, &item, portMAX_DELAY);
 }
 
 void FdConnection::taskTrampoline(void* arg) {
@@ -201,6 +207,22 @@ void FdConnection::taskLoop() {
     int fd = _fd.exchange(-1);
     if (fd >= 0) { ::close(fd); }
     ESP_LOGI(TAG, "read task exit");
+}
+
+void FdConnection::startSendTask() {
+    xTaskCreatePinnedToCore(&FdConnection::sendTask, "conn_send", 4096, this, _prio, nullptr, _core);
+}
+
+void FdConnection::sendTask(void* arg) {
+	auto* self = static_cast<FdConnection*>(arg);
+    SendItem* item;
+    while (self->_running) {
+        if (xQueueReceive(self->sendQueue, &item, portMAX_DELAY) == pdTRUE) {
+			self->protocol->send(item->data.data(), item->data.size());
+            delete item;
+        }
+    }
+    vTaskDelete(nullptr);
 }
 
 void FdConnection::moveFrom(FdConnection& other) noexcept {
