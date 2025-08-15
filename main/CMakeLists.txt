@@ -13,6 +13,8 @@ idf_component_register(
       protocol/ecdh_aes_protocol.cpp
       protocol/passphrase_aes_protocol.cpp
       crypto_ecdh_aes.cpp
+      parameter_store.cpp
+      parameter_sync.cpp
       ${PROTO_GOOGLE_SRCS}  # <-- Google descriptor first
       ${PROTO_SRCS}         # <-- Then all the rest
     INCLUDE_DIRS 

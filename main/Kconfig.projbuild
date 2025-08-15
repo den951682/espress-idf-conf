@@ -13,4 +13,9 @@ menu "Conf Configuration"
             bool "Require authentication for SPP link"
             default y
 	endmenu
+	config PASSPHRASE
+    		string "Pass phrase"
+    		default "PiroJOKE"
+    		help
+			Default passphrase to use in Passphrase ciffer protocols.
 endmenu
