@@ -1,6 +1,7 @@
 #include <cstring>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string>
 #include <sys/_stdint.h>
 #include <sys/unistd.h>
 #include "sdkconfig.h"
@@ -88,7 +89,8 @@ static void start_bt() {
         ESP_LOGI("APP", "FD ready: %d", fd);
         setupConnection(fd);
     });
-    bt.start();
+    std::string name = store.getString(paramstore::ParameterId::DeviceName);
+    bt.start(name.c_str());
 }
 
 static void startReader() {

@@ -21,7 +21,7 @@ public:
     using OnAddrShown = std::function<void(const uint8_t bt_addr[6])>;
 
     BtSppServer() = default;
-    esp_err_t start();
+    esp_err_t start(const char* serverName);
     void stop();
 
     void setOnEvent(OnEvent cb)         { on_event_ = std::move(cb); }
@@ -29,6 +29,7 @@ public:
     void setOnAddr(OnAddrShown cb)      { on_addr_ = std::move(cb); }
 
 private:
+    const char* name;
     bool started_ = false;
     int g_fd = -1;
 
