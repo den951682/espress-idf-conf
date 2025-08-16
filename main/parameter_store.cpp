@@ -156,7 +156,7 @@ public:
                 } break;
                 case ParamType::Bool: {
                     bool b = std::get<bool>(e.value);
-                    if (nvs_get_bool_(e.meta.id, b) == ESP_OK) e.value = b; else nvs_set_bool_(e.meta.id, b);
+                    if (nvs_get_bool_(e.meta.id, b) == ESP_OK) e.value = b; else nvs_set_bool_(e.meta.id, b);                   
                 } break;
             }
         }
@@ -248,14 +248,14 @@ private:
     }
 
     esp_err_t nvs_set_bool_(uint32_t id, bool v) {
-        auto k = key_(id, 'b');
+        std::string k = key_(id, 'c');
         return nvs_set_u8(nvs_, k.c_str(), v ? 1 : 0);
     }
     esp_err_t nvs_get_bool_(uint32_t id, bool &out) {
-        auto k = key_(id, 'b');
+        auto k = key_(id, 'c');
         uint8_t res;
         esp_err_t ret = nvs_get_u8(nvs_, k.c_str(), &res);
-        out = res == 1;
+        if (ret == ESP_OK) out = (res == 1);
         return ret;
     }
 
