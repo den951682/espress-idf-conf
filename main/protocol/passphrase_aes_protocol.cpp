@@ -3,6 +3,7 @@
 #include <cstring>
 #include <stdint.h>
 #include <string>
+#include "esp_log.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 #include "proto-model/Handshake.pb.h"
@@ -28,29 +29,22 @@ void PassphraseAesProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
 
 void PassphraseAesProtocol::appendReceived(const uint8_t* data, size_t len) {
     buffer.insert(buffer.end(), data, data + len);
-
     while (true) {
         if (buffer.empty()) return;
-
         uint8_t frameLen = buffer[0];
         if (buffer.size() < frameLen + 1) {
             return; 
         }
-
         std::vector<uint8_t> frame(buffer.begin() + 1, buffer.begin() + 1 + frameLen);
         buffer.erase(buffer.begin(), buffer.begin() + 1 + frameLen);
-        
         auto decrypted = decryptFrame(frame);
-        ESP_LOG_BUFFER_HEX(TAG, decrypted.data(), decrypted.size());
-        
         if (!handshakeReceived) {
             if (parseHandshake(decrypted)) {
                 handshakeReceived = true;
                 xSemaphoreGive(sendReady);
                 ESP_LOGI(TAG, "Handshake complete");
             }
-        } else {
-          
+        } else {          
             if (recvCb) recvCb(decrypted);
         }
     }

@@ -130,7 +130,6 @@ public:
 
 		pb_encode(&ostream, pModel_ParameterInfo_fields, &out);
 		if(connection_) {
-			ESP_LOG_BUFFER_HEX(TAG, buffer, ostream.bytes_written + 1);
         	connection_ -> enqueueSend(buffer, ostream.bytes_written + 1);
         }
     }

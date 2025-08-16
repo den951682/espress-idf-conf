@@ -32,6 +32,8 @@ FdConnection& FdConnection::operator=(FdConnection&& other) noexcept {
     return *this;
 }
 
+void FdConnection::setDataCallback(DataCallback cb) { _dataCB = std::move(cb); }
+
 void FdConnection::setLineCallback(LineCallback cb) { _onLine = std::move(cb); }
 
 void FdConnection::setCloseCallback(CloseCallback cb) { _closeCB = std::move(cb); }
@@ -89,8 +91,6 @@ ssize_t FdConnection::writeAll(const uint8_t* data, size_t len) {
     size_t total = 0;
     int fd = _fd.load();
     if (fd < 0) return -1;
-    ESP_LOGI(TAG, "SEND BYTES");
-    ESP_LOG_BUFFER_HEX(TAG, data, len);
     while (total < len) {
         ssize_t n = ::write(fd, data + total, len - total);
         if (n > 0) {
@@ -152,7 +152,8 @@ void FdConnection::taskLoop() {
         ssize_t n = ::read(fd, buf.data(), buf.size());
         if (n > 0) {
 			if(_guarded) {
-				protocol -> appendReceived(buf.data(), buf.size());
+				protocol -> appendReceived(buf.data(), n);
+				continue;
 			} else {
             	accum.insert(accum.end(), buf.begin(), buf.begin() + n);
 
@@ -169,8 +170,11 @@ void FdConnection::taskLoop() {
     			[this](const uint8_t* data, size_t len) {
        					 	FdConnection::sendBytes(data, len);
     					 },
-    			 [](std::vector<uint8_t> msg) {
-       					 ESP_LOGI("FdConnection", "Got message size=%u, data=%s", msg.size(), toHex(msg).c_str());
+    			 [this](std::vector<uint8_t> msg) {
+       					 	ESP_LOGI("FdConnection", "Got message size=%u, data=%s", msg.size(), toHex(msg).c_str());
+       					 	if(_dataCB) {
+								_dataCB(msg.data(), msg.size());	
+							}
    						 }
 					  );
 					  _guarded.store(true); 
@@ -195,7 +199,7 @@ void FdConnection::taskLoop() {
             }
             continue;
         }
-}
+        }
         if (n == 0) {
             vTaskDelay(1);
 			continue;

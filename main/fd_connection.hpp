@@ -20,6 +20,7 @@ struct SendItem {
 
 class FdConnection {
 public:
+    using DataCallback = std::function<void(const uint8_t* data, size_t len)>;
     using LineCallback = std::function<void(const std::string&)>;
     using CloseCallback = std::function<void()>;
     explicit FdConnection(int fd,
@@ -35,6 +36,7 @@ public:
     FdConnection(FdConnection&& other) noexcept;
     FdConnection& operator=(FdConnection&& other) noexcept;
 
+    void setDataCallback(DataCallback cb);
     void setLineCallback(LineCallback cb);
     void setCloseCallback(CloseCallback cb);
     bool isRunning() const;
@@ -72,6 +74,7 @@ private:
     TaskHandle_t _task{nullptr};
 
     std::mutex _writeMtx;
+    DataCallback _dataCB;
     LineCallback _onLine;
     CloseCallback _closeCB;
 };
