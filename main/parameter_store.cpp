@@ -179,6 +179,7 @@ public:
     }
 
     void onChange(ParameterId id, ChangeCallback cb) {
+		cb(static_cast<uint32_t>(id), getValue(id));
         std::lock_guard<std::mutex> lk(mu_);
         perId_[static_cast<uint32_t>(id)].push_back(std::move(cb));
     }

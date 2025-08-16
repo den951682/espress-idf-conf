@@ -14,6 +14,7 @@
 #include "parameter_store.cpp"
 #include "parameter_sync.cpp"
 #include "message_type.cpp"
+#include "led_blink_task.cpp"
 #include "uptime_task.cpp"
 
 using namespace paramstore;
@@ -39,6 +40,7 @@ FdConnection* g_conn = nullptr;
 ParameterStore store;
 ParameterSync parameterSync(store);
 UptimeTask uptime(store);
+LedBlinkTask blinkTask(store, GPIO_NUM_2);
 
 static void setupConnection(int fd) {
 	delete g_conn; g_conn = nullptr;
@@ -146,5 +148,6 @@ extern "C" void app_main(void) {
     setupStore();
     start_bt();
     startReader();
+    blinkTask.start();
     uptime.start();
 }	
