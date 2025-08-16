@@ -46,9 +46,11 @@ static void setupConnection(int fd) {
 		parameterSync.removeConnection();
 	});
 	g_conn->setDataCallback([](const uint8_t* data, size_t len){
+		 ESP_LOGI("APP", "Data received:");
+		 ESP_LOG_BUFFER_HEX("APP", data, len);
 		 Data d;
          d.bytes.assign(data, data + len);
-         AppCommand cmd{AppCommandType::DataReceived, d};
+         AppCommand* cmd = new AppCommand{AppCommandType::DataReceived, d};
          xQueueSend(appQueue, &cmd, 0);
     });
         
@@ -62,7 +64,7 @@ static void setupConnection(int fd) {
 		delete g_conn; g_conn = nullptr;
 	 } else { 
 	    parameterSync.setConnection(g_conn);
-        AppCommand cmd{AppCommandType::SendAllParameters, {}};
+        AppCommand* cmd = new AppCommand{AppCommandType::SendAllParameters, {}};
         xQueueSend(appQueue, &cmd, 0);
      }
 }
@@ -93,27 +95,27 @@ static void startReader() {
 }
 
 void appTask(void* arg) {
-    AppCommand cmd;
+    AppCommand* cmd;
     for (;;) {
         if (xQueueReceive(appQueue, &cmd, portMAX_DELAY) == pdTRUE) {
-            switch (cmd.type) {
+            switch (cmd -> type) {
                 case AppCommandType::SendAllParameters:
                     parameterSync.sendAllParametersInfo();
                     parameterSync.sendAllParameters();
                     break;
                     
                 case AppCommandType::DataReceived:
-                	if (std::holds_alternative<Data>(cmd.data)) {
-                    	auto &d = std::get<Data>(cmd.data);
+                	if (std::holds_alternative<Data>(cmd -> data)) {
+                    	auto &d = std::get<Data>(cmd -> data);
 
                    		if (!d.bytes.empty()) {
-                       		auto type = static_cast<MessageType>(d.bytes[0]);
+                       		auto type = static_cast<MessageType>(d.bytes[0]);                       	        	
                         	const uint8_t* payload = d.bytes.data() + 1;
                         	size_t payloadLen = d.bytes.size() - 1;
                         	if(type == MessageType::SetInt || type == MessageType::SetInt ||
-                        		 type == MessageType::SetString || type == MessageType::SetBoolean) {
+                        		type == MessageType::SetString || type == MessageType::SetBoolean) {
 								auto paramSetType = static_cast<ParamSetType>(d.bytes[0]);
-                        		bool ok = parameterSync.handleSetParameter(paramSetType, payload, payloadLen);
+								bool ok = parameterSync.handleSetParameter(paramSetType, payload, payloadLen);
                         		if (!ok) {
                             		ESP_LOGW("APP", "handleSetParameter failed for type=%d", (int)paramSetType);
                         		}
@@ -130,6 +132,7 @@ void appTask(void* arg) {
 
                 default:
                     break;
+                delete cmd;
             }
         }
     }
