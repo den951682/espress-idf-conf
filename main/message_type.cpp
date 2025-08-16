@@ -1,3 +1,4 @@
+#pragma once
 #include <sys/_stdint.h>
 
 enum class MessageType : uint8_t {
@@ -5,7 +6,10 @@ enum class MessageType : uint8_t {
     HandshakeResponse = 0x01,
     ParameterInfo     = 0x02,
     Disconnect        = 0x03,
-
+    SetInt			  = 0x04,
+    SetFloat	      = 0x05,
+    SetString		  = 0x06,
+    SetBoolean		  = 0x07,
     Int               = 0x08,
     Float             = 0x09,
     String            = 0x10,

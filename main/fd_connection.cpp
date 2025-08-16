@@ -116,10 +116,12 @@ ssize_t FdConnection::sendBytes(const uint8_t* data, size_t len) {
 }
 
 ssize_t FdConnection::sendString(const std::string& s) {
+	if(_guarded) return -1;
     return sendBytes(reinterpret_cast<const uint8_t*>(s.data()), s.size());
 }
 
 ssize_t FdConnection::sendLine(const std::string& s) {
+	if(_guarded) return -1;
     std::lock_guard<std::mutex> lock(_writeMtx);
     ssize_t a = writeAll(reinterpret_cast<const uint8_t*>(s.data()), s.size());
     if (a < 0) return a;
