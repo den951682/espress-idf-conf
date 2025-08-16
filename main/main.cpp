@@ -14,6 +14,7 @@
 #include "parameter_store.cpp"
 #include "parameter_sync.cpp"
 #include "message_type.cpp"
+#include "uptime_task.cpp"
 
 using namespace paramstore;
 
@@ -37,6 +38,7 @@ BtSppServer bt;
 FdConnection* g_conn = nullptr;
 ParameterStore store;
 ParameterSync parameterSync(store);
+UptimeTask uptime(store);
 
 static void setupConnection(int fd) {
 	delete g_conn; g_conn = nullptr;
@@ -144,4 +146,5 @@ extern "C" void app_main(void) {
     setupStore();
     start_bt();
     startReader();
+    uptime.start();
 }	

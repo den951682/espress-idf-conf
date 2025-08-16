@@ -16,6 +16,7 @@ idf_component_register(
       crypto_ecdh_aes.cpp
       parameter_store.cpp
       parameter_sync.cpp
+      uptime_task.cpp
       ${PROTO_GOOGLE_SRCS}  # <-- Google descriptor first
       ${PROTO_SRCS}         # <-- Then all the rest
     INCLUDE_DIRS 
