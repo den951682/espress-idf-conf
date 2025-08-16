@@ -23,7 +23,8 @@ public:
     using DataCallback = std::function<void(const uint8_t* data, size_t len)>;
     using LineCallback = std::function<void(const std::string&)>;
     using CloseCallback = std::function<void()>;
-    explicit FdConnection(int fd,
+    explicit FdConnection(int fd,	
+    					    const char* passPhrase = nullptr,
                             const char* taskName = "conn_read",
                             uint16_t stackSize = 4096,
                             UBaseType_t priority = tskIDLE_PRIORITY + 3,
@@ -64,6 +65,7 @@ private:
     Protocol* protocol;
     QueueHandle_t sendQueue;
     std::atomic<int> _fd{-1};
+    const char* _passPhrase;
     const char* _taskName;
     uint16_t _stack;
     UBaseType_t _prio;

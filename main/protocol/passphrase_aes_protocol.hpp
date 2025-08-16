@@ -5,10 +5,11 @@
 #include "esp_log.h"
 #include "crypto_ecdh_aes.hpp"
 #include <stdint.h>
+#include <sys/_intsup.h>
 
 class PassphraseAesProtocol : public Protocol {
 public:
-    PassphraseAesProtocol();
+    PassphraseAesProtocol(const char* passPhrase);
     ~PassphraseAesProtocol() override;
 
     void init(WriteCallback writeCb, QueueCallback recvCb) override;
@@ -21,7 +22,7 @@ private:
     SemaphoreHandle_t sendReady;
     std::vector<uint8_t> buffer;
     bool handshakeReceived = false;
-    CryptoEcdhAes crypto = CryptoEcdhAes(CryptoEcdhAes::Mode::PASSPHRASE);
+    CryptoEcdhAes crypto;
 
     void sendCode(uint8_t code);
     void sendHandshake();

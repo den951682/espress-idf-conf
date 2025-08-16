@@ -45,7 +45,8 @@ LedBlinkTask blinkTask(store, GPIO_NUM_2);
 
 static void setupConnection(int fd) {
 	delete g_conn; g_conn = nullptr;
-    g_conn = new FdConnection(fd);
+    std::string passPhrase = store.getString(ParameterId::PassPhrase);
+    g_conn = new FdConnection(fd, passPhrase.c_str());
       
     g_conn->setCloseCallback([](){
 		parameterSync.removeConnection();

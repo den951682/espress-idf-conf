@@ -16,7 +16,7 @@ public:
         PASSPHRASE,
         EPHEMERAL
     };
-    explicit CryptoEcdhAes(Mode mode);
+    explicit CryptoEcdhAes(Mode mode, const char* passPhrase = nullptr);
     ~CryptoEcdhAes();
 
     bool generate_keypair();

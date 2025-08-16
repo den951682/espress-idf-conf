@@ -17,11 +17,12 @@ namespace {
 }
 
 FdConnection::FdConnection(int fd,
+							   const char* passPhrase,
                                const char* taskName,
                                uint16_t stackSize,
                                UBaseType_t priority,
                                BaseType_t core)
-    : _fd(fd), _taskName(taskName), _stack(stackSize), _prio(priority), _core(core) {}
+    : _fd(fd), _passPhrase(passPhrase), _taskName(taskName), _stack(stackSize), _prio(priority), _core(core) {}
 
 FdConnection::~FdConnection() { stop(); }
 
@@ -48,7 +49,7 @@ esp_err_t FdConnection::start() {
     if (_running.load()) return ESP_OK;
     _running.store(true);
     _guarded.store(false);
-    protocol = new PassphraseAesProtocol();
+    protocol = new PassphraseAesProtocol(_passPhrase);
 	sendQueue = xQueueCreate(16, sizeof(SendItem*));
     startSendTask();
     BaseType_t ok = xTaskCreatePinnedToCore(&FdConnection::taskTrampoline,

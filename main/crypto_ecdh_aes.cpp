@@ -1,10 +1,11 @@
 #include "crypto_ecdh_aes.hpp"
 #include <cstring>
+#include <sys/_intsup.h>
 #include <vector>
 
 static const char* TAG = "CryptoEcdhAes";
 
-CryptoEcdhAes::CryptoEcdhAes(Mode mode) : mode(mode) {
+CryptoEcdhAes::CryptoEcdhAes(Mode mode, const char* passPhrase) : mode(mode) {
 	mbedtls_ctr_drbg_init(&ctr_drbg);
 	mbedtls_entropy_init(&entropy);
 	mbedtls_gcm_init(&aes_ctx);
@@ -13,7 +14,7 @@ CryptoEcdhAes::CryptoEcdhAes(Mode mode) : mode(mode) {
 	                          (const unsigned char*)pers, strlen(pers));
 	if(mode == Mode::PASSPHRASE) {
 		 std::vector<uint8_t> salt = {0, 1, 2, 3, 4, 5, 6, 7};
-		 derive_key_from_passphrase("PiroJOKE", salt);
+		 derive_key_from_passphrase(passPhrase, salt);
 	} else {
 	   	 mbedtls_ecdh_init(&ecdh);
     }

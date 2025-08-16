@@ -10,7 +10,7 @@
 
 static const char* TAG = "PassphraseAesProtocol";
 
-PassphraseAesProtocol::PassphraseAesProtocol() {
+PassphraseAesProtocol::PassphraseAesProtocol(const char* passPhrase): crypto(CryptoEcdhAes::Mode::PASSPHRASE, passPhrase) {
     sendReady = xSemaphoreCreateBinary();
 }
 
