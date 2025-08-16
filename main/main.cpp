@@ -14,7 +14,6 @@
 #include "parameter_store.cpp"
 #include "parameter_sync.cpp"
 #include "message_type.cpp"
-#include "utils.cpp"
 
 using namespace paramstore;
 
