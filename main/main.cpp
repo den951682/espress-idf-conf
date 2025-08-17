@@ -118,6 +118,33 @@ static void sendMessageToConnection(const char* text) {
     }
 }
 
+static void handleDataReceivedCommand(std::vector<uint8_t> data) {
+	if (!data.empty()) {
+		auto type = static_cast<MessageType>(data[0]);                       	        	
+		const uint8_t* payload = data.data() + 1;
+    	size_t payloadLen = data.size() - 1;
+    	if(type == MessageType::SetInt || type == MessageType::SetInt ||
+    		type == MessageType::SetString || type == MessageType::SetBoolean) {
+			auto paramSetType = static_cast<ParamSetType>(data[0]);
+			bool ok = parameterSync.handleSetParameter(paramSetType, payload, payloadLen, 	[](SetParam setParam){
+					if(setParam == SetParam::Passphrase) {
+						sendMessageToConnection("З'єднання буде закрито. Підключись з новою Pass-фразою. Не забудь її змінити на Android-стороні.");	   
+					}
+					if(setParam == SetParam::ServerName) {
+						sendMessageToConnection("Сервер буде перезапущено з новою назвою. Перепідключись."); 
+					}
+				});
+    		if (!ok) {
+        		ESP_LOGW("APP", "handleSetParameter failed for type=%d", (int)paramSetType);
+    		}
+		} else {
+			ESP_LOGW("APP", "Unsupported DataReceived type=%d", (int)type); 
+		}
+	} else {
+	 	ESP_LOGW("APP", "DataReceived without data");
+	}
+}       		
+
 void appTask(void* arg) {
     AppCommand* cmd;
     for (;;) {
@@ -130,32 +157,7 @@ void appTask(void* arg) {
                     
                 case AppCommandType::DataReceived:
                 	if (std::holds_alternative<Data>(cmd -> data)) {
-                    	auto &d = std::get<Data>(cmd -> data);
-
-                   		if (!d.bytes.empty()) {
-                       		auto type = static_cast<MessageType>(d.bytes[0]);                       	        	
-                        	const uint8_t* payload = d.bytes.data() + 1;
-                        	size_t payloadLen = d.bytes.size() - 1;
-                        	if(type == MessageType::SetInt || type == MessageType::SetInt ||
-                        		type == MessageType::SetString || type == MessageType::SetBoolean) {
-								auto paramSetType = static_cast<ParamSetType>(d.bytes[0]);
-								bool ok = parameterSync.handleSetParameter(paramSetType, payload, payloadLen, 	[](SetParam setParam){
-           								if(setParam == SetParam::Passphrase) {
-											sendMessageToConnection("З'єднання буде закрито. Підключись з новою Pass-фразою. Не забудь її змінити на Android-стороні.");	   
-										}
-										if(setParam == SetParam::ServerName) {
-											sendMessageToConnection("Сервер буде перезапущено з новою назвою. Перепідключись."); 
-										}
-        							});
-                        		if (!ok) {
-                            		ESP_LOGW("APP", "handleSetParameter failed for type=%d", (int)paramSetType);
-                        		}
-       						} else {
-								ESP_LOGW("APP", "Unsupported DataReceived type=%d", (int)type); 
-							}
-    					} else {
-       					 	ESP_LOGW("APP", "DataReceived without data");
-   						}
+                    	handleDataReceivedCommand(std::get<Data>(cmd -> data).bytes);
    					} else {
 						ESP_LOGW("APP", "Wrong  AppCommandType::DataReceived");
 				    }
