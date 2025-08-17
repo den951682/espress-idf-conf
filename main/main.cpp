@@ -16,6 +16,7 @@
 #include "parameter_store.cpp"
 #include "parameter_sync.cpp"
 #include "message_type.cpp"
+#include "joystick_task.cpp"
 #include "led_blink_task.cpp"
 #include "uptime_task.cpp"
 #include "send_delayed.cpp"
@@ -44,8 +45,9 @@ BtSppServer bt;
 FdConnection* g_conn = nullptr;
 ParameterStore store;
 ParameterSync parameterSync(store);
-UptimeTask uptime(store);
+JoystickTask joystickTask(store);
 LedBlinkTask blinkTask(store, GPIO_NUM_2);
+UptimeTask uptime(store);
 
 static void setupConnection(int fd) {
 	delete g_conn; g_conn = nullptr;
@@ -201,5 +203,6 @@ extern "C" void app_main(void) {
     start_bt();
     startReader();
     blinkTask.start();
+    joystickTask.start();
     uptime.start();
 }	

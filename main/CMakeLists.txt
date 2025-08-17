@@ -16,6 +16,7 @@ idf_component_register(
       crypto_ecdh_aes.cpp
       parameter_store.cpp
       parameter_sync.cpp
+      joystick_task.cpp
       led_blink_task.cpp
       uptime_task.cpp
       send_delayed.cpp
@@ -28,6 +29,7 @@ idf_component_register(
     PRIV_INCLUDE_DIRS   # optional, add here private include directories
     REQUIRES            # optional, list the public requirements (component names)
       bt
+      esp_adc
     PRIV_REQUIRES       # optional, list the private requirements
       bt
       nvs_flash
