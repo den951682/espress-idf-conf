@@ -1,15 +1,25 @@
-ESP-IDF template app
+Прототип embedded-частини системи налаштування embedded пристроїв.
 ====================
 
-This is a template application to be used with [Espressif IoT Development Framework](https://github.com/espressif/esp-idf).
+Детальніше про систему https://github.com/den951682/ConfB
 
-Please check [ESP-IDF docs](https://docs.espressif.com/projects/esp-idf/en/latest/get-started/index.html) for getting started instructions.
+## Development Environment
 
-*Code in this repository is in the Public Domain (or CC0 licensed, at your option.)
-Unless required by applicable law or agreed to in writing, this
-software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-CONDITIONS OF ANY KIND, either express or implied.*
+- **OS**: Windows 10 x64
+- **IDE**: Espressif IDE (based on Eclipse CDT)
+- **Framework**: [ESP-IDF v5.3.1](https://github.com/espressif/esp-idf)
+- **Toolchain**: Xtensa GCC (ESP32), bundled with ESP-IDF
+- **Build system**: CMake + Ninja
+- **Programming language**: C / C++
+- **RTOS**: FreeRTOS (вбудований у ESP-IDF)
+- **Board**: ESP32
 
+## How to Build
 
-run protogen.bat (in cmd not in idf terminal)
-nanopb.h 141 line add import for #include "descriptor.pb.h" #include "google/protobuf/descriptor.pb.h" (at files begin)
+1. Встановіть [ESP-IDF v5.3.1](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html#installation).
+2. Імпортуйте проєкт у Espressif IDE або використовуйте CLI:
+   ```bash
+   idf.py set-target esp32
+   idf.py build
+   idf.py flash -p COM3 -b 921600
+   idf.py monitor
