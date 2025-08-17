@@ -18,11 +18,14 @@
 #include "message_type.cpp"
 #include "led_blink_task.cpp"
 #include "uptime_task.cpp"
+#include "send_delayed.cpp"
 
 using namespace paramstore;
 
 enum class AppCommandType : uint8_t {
 	DataReceived,
+	RestartConnection,
+	RestartServer,
     SendAllParameters,
 };
 
@@ -48,7 +51,11 @@ static void setupConnection(int fd) {
 	delete g_conn; g_conn = nullptr;
     std::string passPhrase = store.getString(ParameterId::PassPhrase);
     g_conn = new FdConnection(fd, passPhrase.c_str());
-      
+    g_conn->setReadyCallback([](){
+		parameterSync.setConnection(g_conn);
+        AppCommand* cmd = new AppCommand{AppCommandType::SendAllParameters, {}};
+        xQueueSend(appQueue, &cmd, 0);
+	});
     g_conn->setCloseCallback([](){
 		parameterSync.removeConnection();
 	});
@@ -69,11 +76,7 @@ static void setupConnection(int fd) {
     if (g_conn->start() != ESP_OK) { 
 		ESP_LOGE("APP", "start failed"); 
 		delete g_conn; g_conn = nullptr;
-	 } else { 
-	    parameterSync.setConnection(g_conn);
-        AppCommand* cmd = new AppCommand{AppCommandType::SendAllParameters, {}};
-        xQueueSend(appQueue, &cmd, 0);
-     }
+	}
 }
 
 static void setupStore() {
@@ -128,10 +131,14 @@ static void handleDataReceivedCommand(std::vector<uint8_t> data) {
 			auto paramSetType = static_cast<ParamSetType>(data[0]);
 			bool ok = parameterSync.handleSetParameter(paramSetType, payload, payloadLen, 	[](SetParam setParam){
 					if(setParam == SetParam::Passphrase) {
-						sendMessageToConnection("З'єднання буде закрито. Підключись з новою Pass-фразою. Не забудь її змінити на Android-стороні.");	   
+						sendMessageToConnection("З'єднання буде закрито. Підключись з новою Pass-фразою. Не забудь її змінити на Android-стороні.");
+					    AppCommand* cmd = new AppCommand{ AppCommandType::RestartConnection, {} };
+                        sendDelayed(appQueue, cmd, 1000);
 					}
 					if(setParam == SetParam::ServerName) {
 						sendMessageToConnection("Сервер буде перезапущено з новою назвою. Перепідключись."); 
+						AppCommand* cmd = new AppCommand{ AppCommandType::RestartServer, {} };
+                        sendDelayed(appQueue, cmd, 1000);
 					}
 				});
     		if (!ok) {
@@ -150,18 +157,34 @@ void appTask(void* arg) {
     for (;;) {
         if (xQueueReceive(appQueue, &cmd, portMAX_DELAY) == pdTRUE) {
             switch (cmd -> type) {
-                case AppCommandType::SendAllParameters:
-                    parameterSync.sendAllParametersInfo();
-                    parameterSync.sendAllParameters();
-                    break;
-                    
-                case AppCommandType::DataReceived:
+				case AppCommandType::DataReceived:
                 	if (std::holds_alternative<Data>(cmd -> data)) {
                     	handleDataReceivedCommand(std::get<Data>(cmd -> data).bytes);
    					} else {
 						ESP_LOGW("APP", "Wrong  AppCommandType::DataReceived");
 				    }
                 	break;
+                
+                case AppCommandType::RestartConnection:
+                    if(g_conn) {
+						g_conn -> stop();
+						g_conn = nullptr;
+					}
+                	break;
+                	
+                case AppCommandType::RestartServer:
+                     if(g_conn) {
+						g_conn -> stop();
+						g_conn = nullptr;
+					}
+					bt.stop();
+					start_bt();
+                	break;
+                	
+                case AppCommandType::SendAllParameters:
+                    parameterSync.sendAllParametersInfo();
+                    parameterSync.sendAllParameters();
+                    break;
 
                 default:
                     break;

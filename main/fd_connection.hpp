@@ -22,6 +22,7 @@ class FdConnection {
 public:
     using DataCallback = std::function<void(const uint8_t* data, size_t len)>;
     using LineCallback = std::function<void(const std::string&)>;
+    using ReadyCallback = std::function<void()>;
     using CloseCallback = std::function<void()>;
     explicit FdConnection(int fd,	
     					    const char* passPhrase = nullptr,
@@ -37,9 +38,10 @@ public:
     FdConnection(FdConnection&& other) noexcept;
     FdConnection& operator=(FdConnection&& other) noexcept;
 
-    void setDataCallback(DataCallback cb);
-    void setLineCallback(LineCallback cb);
-    void setCloseCallback(CloseCallback cb);
+    void setDataCallback(DataCallback cb) { _dataCB = std::move(cb); }
+    void setLineCallback(LineCallback cb) { _onLine = std::move(cb); }
+    void setReadyCallback(ReadyCallback cb) { _readyCallback = std::move(cb); }
+    void setCloseCallback(CloseCallback cb) { _closeCB = std::move(cb); }
     bool isRunning() const;
 
     esp_err_t start();
@@ -78,5 +80,6 @@ private:
     std::mutex _writeMtx;
     DataCallback _dataCB;
     LineCallback _onLine;
+    ReadyCallback _readyCallback;
     CloseCallback _closeCB;
 };

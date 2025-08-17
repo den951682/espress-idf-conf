@@ -43,6 +43,7 @@ void PassphraseAesProtocol::appendReceived(const uint8_t* data, size_t len) {
                 handshakeReceived = true;
                 xSemaphoreGive(sendReady);
                 ESP_LOGI(TAG, "Handshake complete");
+                if(readyCallback) readyCallback();
             }
         } else {          
             if (recvCb) recvCb(decrypted);

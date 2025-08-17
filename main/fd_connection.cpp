@@ -33,12 +33,6 @@ FdConnection& FdConnection::operator=(FdConnection&& other) noexcept {
     return *this;
 }
 
-void FdConnection::setDataCallback(DataCallback cb) { _dataCB = std::move(cb); }
-
-void FdConnection::setLineCallback(LineCallback cb) { _onLine = std::move(cb); }
-
-void FdConnection::setCloseCallback(CloseCallback cb) { _closeCB = std::move(cb); }
-
 bool FdConnection::isRunning() const { return _running.load(); }
 
 esp_err_t FdConnection::start() {
@@ -50,6 +44,7 @@ esp_err_t FdConnection::start() {
     _running.store(true);
     _guarded.store(false);
     protocol = new PassphraseAesProtocol(_passPhrase);
+    protocol -> setReadyCallback([this](){if(_readyCallback) _readyCallback();});
 	sendQueue = xQueueCreate(16, sizeof(SendItem*));
     startSendTask();
     BaseType_t ok = xTaskCreatePinnedToCore(&FdConnection::taskTrampoline,

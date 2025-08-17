@@ -18,6 +18,7 @@ idf_component_register(
       parameter_sync.cpp
       led_blink_task.cpp
       uptime_task.cpp
+      send_delayed.cpp
       ${PROTO_GOOGLE_SRCS}  # <-- Google descriptor first
       ${PROTO_SRCS}         # <-- Then all the rest
     INCLUDE_DIRS 
