@@ -12,7 +12,12 @@ enum class ParamSetType : uint8_t {
     SetBoolean = 0x07
 };
 
-using HandlerFunc = bool(*)(const uint8_t*, size_t);
+enum class SetParam : uint8_t {
+    Passphrase     = 0x01,
+    ServerName   = 0x02,
+};
+
+using SetParameterCallback = std::function<void(const SetParam& setParam)>;;
 
 class ParameterSync {
 public:
@@ -23,7 +28,7 @@ public:
         });
     }
     
-    bool handleSetParameter(ParamSetType type, const uint8_t* data, size_t datalen) {
+    bool handleSetParameter(ParamSetType type, const uint8_t* data, size_t datalen, SetParameterCallback cb) {
     switch (type) {
         case ParamSetType::SetInt: {
             pModel_IntParameter msg = pModel_IntParameter_init_zero;
@@ -55,6 +60,12 @@ public:
                 return false;
             }
             std::string value(reinterpret_cast<char*>(msg.value.bytes), msg.value.size);
+            if(static_cast<paramstore::ParameterId>(msg.id) == paramstore::ParameterId::DeviceName) {
+				cb(SetParam::ServerName);
+			}
+			if(static_cast<paramstore::ParameterId>(msg.id) == paramstore::ParameterId::PassPhrase) {
+				cb(SetParam::Passphrase);
+			}
             store_.setString(static_cast<paramstore::ParameterId>(msg.id), value);
             return true;
         }

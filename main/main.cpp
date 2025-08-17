@@ -4,6 +4,7 @@
 #include <string>
 #include <sys/_stdint.h>
 #include <sys/unistd.h>
+#include "Parameters.pb.h"
 #include "sdkconfig.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -21,8 +22,8 @@
 using namespace paramstore;
 
 enum class AppCommandType : uint8_t {
+	DataReceived,
     SendAllParameters,
-    DataReceived,
 };
 
 struct Data {
@@ -101,6 +102,22 @@ static void startReader() {
     });
 }
 
+
+static void sendMessageToConnection(const char* text) {
+	ESP_LOGI("APP", "Send message %s", text);
+	pModel_Message msg = pModel_Message_init_zero;
+    size_t n = std::min(strlen(text), sizeof(msg.text.bytes));
+    msg.text.size = n;
+    memcpy(msg.text.bytes, text, n);
+    uint8_t buffer[512];
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer + 1, sizeof(buffer) - 1);
+	buffer[0] = static_cast<uint8_t>(MessageType::Message);
+	pb_encode(&ostream, pModel_Message_fields, &msg);	
+	if(g_conn) {
+        g_conn -> enqueueSend(buffer, ostream.bytes_written + 1);
+    }
+}
+
 void appTask(void* arg) {
     AppCommand* cmd;
     for (;;) {
@@ -122,7 +139,14 @@ void appTask(void* arg) {
                         	if(type == MessageType::SetInt || type == MessageType::SetInt ||
                         		type == MessageType::SetString || type == MessageType::SetBoolean) {
 								auto paramSetType = static_cast<ParamSetType>(d.bytes[0]);
-								bool ok = parameterSync.handleSetParameter(paramSetType, payload, payloadLen);
+								bool ok = parameterSync.handleSetParameter(paramSetType, payload, payloadLen, 	[](SetParam setParam){
+           								if(setParam == SetParam::Passphrase) {
+											sendMessageToConnection("З'єднання буде закрито. Підключись з новою Pass-фразою. Не забудь її змінити на Android-стороні.");	   
+										}
+										if(setParam == SetParam::ServerName) {
+											sendMessageToConnection("Сервер буде перезапущено з новою назвою. Перепідключись."); 
+										}
+        							});
                         		if (!ok) {
                             		ESP_LOGW("APP", "handleSetParameter failed for type=%d", (int)paramSetType);
                         		}
