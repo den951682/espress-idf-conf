@@ -1,4 +1,7 @@
 #include "crypto_ecdh_aes.hpp"
+#include "esp_log.h"
+#include "mbedtls/base64.h"
+#include "mbedtls/pk.h"
 #include <cstring>
 #include <sys/_intsup.h>
 #include <vector>
@@ -17,6 +20,7 @@ CryptoEcdhAes::CryptoEcdhAes(Mode mode, const char* passPhrase) : mode(mode) {
 		 derive_key_from_passphrase(passPhrase, salt);
 	} else {
 	   	 mbedtls_ecdh_init(&ecdh);
+	   	 generate_keypair();
     }
     ESP_LOGI("CryptoEcdhAes", "Initialized in mode: %s",
              (mode == Mode::PASSPHRASE) ? "PASSPHRASE" : "EPHEMERAL");
@@ -32,38 +36,76 @@ CryptoEcdhAes::~CryptoEcdhAes() {
 }
 
 bool CryptoEcdhAes::generate_keypair() {
-    /*int ret = mbedtls_ecp_group_load(&ecdh.grp, MBEDTLS_ECP_DP_SECP256R1);
+    int ret = mbedtls_ecp_group_load(&ecdh.private_ctx.private_mbed_ecdh.private_grp, MBEDTLS_ECP_DP_SECP256R1);
     if (ret != 0) {
         ESP_LOGE(TAG, "mbedtls_ecp_group_load failed: %d", ret);
         return false;
     }
-    ret = mbedtls_ecdh_gen_public(&ecdh.grp, &ecdh.d, &ecdh.Q,
+    ret = mbedtls_ecdh_gen_public(&ecdh.private_ctx.private_mbed_ecdh.private_grp, &ecdh.private_ctx.private_mbed_ecdh.private_d,
+     &ecdh.private_ctx.private_mbed_ecdh.private_Q,
                                   mbedtls_ctr_drbg_random, &ctr_drbg);
     if (ret != 0) {
         ESP_LOGE(TAG, "mbedtls_ecdh_gen_public failed: %d", ret);
         return false;
     }
-    ecdh_ready = true;*/
+    ecdh_ready = true;
     return true;
 }
 
-std::vector<uint8_t> CryptoEcdhAes::get_public_key_der() {
-    std::vector<uint8_t> buf(200);
-    /*unsigned char* p = buf.data();
-    size_t len = 0;
-    mbedtls_ecp_point_write_binary(&ecdh.grp, &ecdh.Q,
-                                   MBEDTLS_ECP_PF_UNCOMPRESSED, &len,
-                                   p, buf.size());
-    buf.resize(len);*/
+std::vector<uint8_t> CryptoEcdhAes::get_public_key_raw() {
+    std::vector<uint8_t> buf(65); 
+    size_t olen = 0;
+
+    int ret = mbedtls_ecp_point_write_binary(
+        &ecdh.private_ctx.private_mbed_ecdh.private_grp,
+        &ecdh.private_ctx.private_mbed_ecdh.private_Q,
+        MBEDTLS_ECP_PF_UNCOMPRESSED,   
+        &olen,
+        buf.data(), buf.size()
+    );
+
+    if (ret != 0 || olen == 0) {
+        ESP_LOGE(TAG, "mbedtls_ecp_point_write_binary failed: %d", ret);
+        return {};
+    }
+
+    buf.resize(olen);
     return buf;
 }
 
-bool CryptoEcdhAes::apply_other_public(const std::vector<uint8_t>& other_pubkey) {
-   /* mbedtls_ecp_point Qp;
+
+void CryptoEcdhAes::get_encoded_public_key(char* out, size_t out_len) {
+    const std::vector<uint8_t>& pk = get_public_key_raw();
+    size_t olen = 0;
+    int ret = mbedtls_base64_encode(
+        reinterpret_cast<unsigned char*>(out), out_len, &olen,
+        pk.data(), pk.size()
+    );
+    if (ret != 0) {
+        ESP_LOGE("ECDH", "Base64 encode failed: %d", ret);
+        out[0] = '\0';
+        return;
+    }
+}
+
+bool CryptoEcdhAes::apply_other_public(const std::vector<uint8_t>& other_pubkey_b64) {
+    size_t olen = 0;
+    std::vector<uint8_t> other_pubkey_raw(200); 
+    int ret = mbedtls_base64_decode(
+        other_pubkey_raw.data(), other_pubkey_raw.size(), &olen,
+        other_pubkey_b64.data(), other_pubkey_b64.size()
+    );
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Base64 decode failed: %d", ret);
+        return false;
+    }
+    
+    other_pubkey_raw.resize(olen);
+    mbedtls_ecp_point Qp;
     mbedtls_ecp_point_init(&Qp);
 
-    int ret = mbedtls_ecp_point_read_binary(&ecdh.grp, &Qp,
-                                            other_pubkey.data(), other_pubkey.size());
+    ret = mbedtls_ecp_point_read_binary(&ecdh.private_ctx.private_mbed_ecdh.private_grp, &Qp,
+                                            other_pubkey_raw.data(), other_pubkey_raw.size());
     if (ret != 0) {
         ESP_LOGE(TAG, "ecp_point_read_binary failed: %d", ret);
         mbedtls_ecp_point_free(&Qp);
@@ -73,7 +115,7 @@ bool CryptoEcdhAes::apply_other_public(const std::vector<uint8_t>& other_pubkey)
     mbedtls_mpi shared_secret;
     mbedtls_mpi_init(&shared_secret);
 
-    ret = mbedtls_ecdh_compute_shared(&ecdh.grp, &shared_secret, &Qp, &ecdh.d,
+    ret = mbedtls_ecdh_compute_shared(&ecdh.private_ctx.private_mbed_ecdh.private_grp, &shared_secret, &Qp, &ecdh.private_ctx.private_mbed_ecdh.private_d,
                                       mbedtls_ctr_drbg_random, &ctr_drbg);
     mbedtls_ecp_point_free(&Qp);
 
@@ -83,12 +125,10 @@ bool CryptoEcdhAes::apply_other_public(const std::vector<uint8_t>& other_pubkey)
         return false;
     }
 
-    // Перетворюємо секрет у байти
     std::vector<uint8_t> secret(mbedtls_mpi_size(&shared_secret));
     mbedtls_mpi_write_binary(&shared_secret, secret.data(), secret.size());
     mbedtls_mpi_free(&shared_secret);
 
-    // Генеруємо AES ключ (SHA256 -> перші 16 байт)
     uint8_t hash[32];
     mbedtls_md_context_t md_ctx;
     mbedtls_md_init(&md_ctx);
@@ -98,8 +138,7 @@ bool CryptoEcdhAes::apply_other_public(const std::vector<uint8_t>& other_pubkey)
     mbedtls_md_finish(&md_ctx, hash);
     mbedtls_md_free(&md_ctx);
 
-    return aes_init_with_key(hash, 16);*/
-    return true;
+    return aes_init_with_key(hash, 16);
 }
 
 std::vector<uint8_t> CryptoEcdhAes::encrypt_data_whole(const std::vector<uint8_t>& data) {

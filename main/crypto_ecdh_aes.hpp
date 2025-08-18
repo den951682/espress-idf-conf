@@ -20,8 +20,9 @@ public:
     ~CryptoEcdhAes();
 
     bool generate_keypair();
-    std::vector<uint8_t> get_public_key_der();
-    bool apply_other_public(const std::vector<uint8_t>& other_pubkey);
+    std::vector<uint8_t> get_public_key_raw();
+    void get_encoded_public_key(char* out, size_t out_len);
+    bool apply_other_public(const std::vector<uint8_t>& other_pubkey_b64);
     
     bool derive_key_from_passphrase(const std::string& passphrase, const std::vector<uint8_t>& salt);
 

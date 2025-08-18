@@ -23,3 +23,8 @@
    idf.py build
    idf.py flash -p COM3 -b 921600
    idf.py monitor
+
+   
+## Ініціалізація прото моделі
+1. виконай скрипт protogen.bat (в середовищі Windows), todo // в idf не працює, налаштувати
+2. вручну зроби #include "descriptor.pb.h" в proto-model/nanopb.pb.h

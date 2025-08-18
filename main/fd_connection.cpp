@@ -8,6 +8,7 @@
 #include <sstream>
 #include <iomanip>
 
+#include "protocol/ecdh_aes_protocol.hpp"
 #include "protocol/passphrase_aes_protocol.hpp"
 #include "esp_log.h"
 
@@ -43,7 +44,7 @@ esp_err_t FdConnection::start() {
     if (_running.load()) return ESP_OK;
     _running.store(true);
     _guarded.store(false);
-    protocol = new PassphraseAesProtocol(_passPhrase);
+    protocol = new EcdhAesProtocol();
     protocol -> setReadyCallback([this](){if(_readyCallback) _readyCallback();});
 	sendQueue = xQueueCreate(16, sizeof(SendItem*));
     startSendTask();

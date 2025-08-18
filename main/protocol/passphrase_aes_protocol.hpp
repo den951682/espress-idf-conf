@@ -17,10 +17,6 @@ public:
     bool send(const uint8_t* data, size_t len) override;
 
 private:
-    WriteCallback writeCb;
-    QueueCallback recvCb;
-    SemaphoreHandle_t sendReady;
-    std::vector<uint8_t> buffer;
     bool handshakeReceived = false;
     CryptoEcdhAes crypto;
 

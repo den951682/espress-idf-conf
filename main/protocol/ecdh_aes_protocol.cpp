@@ -1,10 +1,16 @@
 #include "ecdh_aes_protocol.hpp"
+#include "crypto_ecdh_aes.hpp"
 #include <cstring>
+#include <stdint.h>
 #include <string>
+#include "esp_log.h"
+#include "pb_decode.h"
+#include "pb_encode.h"
+#include "proto-model/Handshake.pb.h"
 
 static const char* TAG = "EcdhAesProtocol";
 
-EcdhAesProtocol::EcdhAesProtocol() {
+EcdhAesProtocol::EcdhAesProtocol(): crypto(CryptoEcdhAes::Mode::EPHEMERAL) {
     sendReady = xSemaphoreCreateBinary();
 }
 
@@ -23,27 +29,24 @@ void EcdhAesProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
 
 void EcdhAesProtocol::appendReceived(const uint8_t* data, size_t len) {
     buffer.insert(buffer.end(), data, data + len);
-
     while (true) {
         if (buffer.empty()) return;
-
         uint8_t frameLen = buffer[0];
         if (buffer.size() < frameLen + 1) {
             return; 
         }
-
         std::vector<uint8_t> frame(buffer.begin() + 1, buffer.begin() + 1 + frameLen);
-        ESP_LOG_BUFFER_HEX(TAG, frame.data(), frame.size());
         buffer.erase(buffer.begin(), buffer.begin() + 1 + frameLen);
-        
+        std::vector<uint8_t> decrypted;
+        if(handshakeReceived) decrypted = decryptFrame(frame); else decrypted = frame;
         if (!handshakeReceived) {
-            if (parseHandshake(frame)) {
+            if (parseHandshake(decrypted)) {
                 handshakeReceived = true;
                 xSemaphoreGive(sendReady);
                 ESP_LOGI(TAG, "Handshake complete");
+                if(readyCallback) readyCallback();
             }
-        } else {
-            auto decrypted = decryptFrame(frame);
+        } else {          
             if (recvCb) recvCb(decrypted);
         }
     }
@@ -54,6 +57,7 @@ bool EcdhAesProtocol::send(const uint8_t* data, size_t len) {
         ESP_LOGW(TAG, "Send blocked: handshake not complete");
         return false;
     }
+    xSemaphoreGive(sendReady);
     auto encrypted = encryptFrame({data, data + len});
     uint8_t hdr = encrypted.size();
     writeCb(&hdr, 1);
@@ -61,26 +65,53 @@ bool EcdhAesProtocol::send(const uint8_t* data, size_t len) {
     return true;
 }
 
+void EcdhAesProtocol::sendCode(uint8_t code) {
+    writeCb(&code, 1);
+}
+
 void EcdhAesProtocol::sendHandshake() {
-    const char* msg = "HANDSHAKE";
-    uint8_t len = strlen(msg);
+	//no header
+	uint8_t headerLen = 0;
+	writeCb(&headerLen, 1);
+	
+	ESP_LOGI(TAG, "Sending HANDSHAKE");
+     
+    pModel_HandshakeRequest req = pModel_HandshakeRequest_init_zero;
+    char pk_base64[512];  
+    crypto.get_encoded_public_key(pk_base64, sizeof(pk_base64));
+    strncpy(req.text, pk_base64, sizeof(req.text) - 1);
+    req.text[sizeof(req.text) - 1] = '\0'; 
+    uint8_t buffer[512];
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    if (!pb_encode(&stream, pModel_HandshakeRequest_fields, &req)) {
+        ESP_LOGE(TAG, "Handshake encode failed: %s", PB_GET_ERROR(&stream));
+        sendCode(5);
+    }  
+    uint8_t len = stream.bytes_written;
     writeCb(&len, 1);
-    writeCb(reinterpret_cast<const uint8_t*>(msg), len);
+    writeCb(buffer, len);
 }
 
 bool EcdhAesProtocol::parseHandshake(const std::vector<uint8_t>& frame) {
-    // TODO: тут розбір ключа, встановлення AES
-    // зараз просто перевірка тексту
-    std::string text(frame.begin(), frame.end());
-    return (text == "HANDSHAKE_OK");
+    pModel_HandshakeResponse resp = pModel_HandshakeResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(frame.data(), frame.size());
+    if (!pb_decode(&istream, pModel_HandshakeResponse_fields, &resp)) {
+        ESP_LOGE(TAG, "Handshake decode failed: %s", PB_GET_ERROR(&istream));
+        return false;
+    }
+    std::vector<uint8_t> b64(resp.text, resp.text + strlen(resp.text));
+    bool res = crypto.apply_other_public(b64);
+    return res;
 }
 
 std::vector<uint8_t> EcdhAesProtocol::encryptFrame(const std::vector<uint8_t>& plain) {
-    // TODO: AES шифрування
-    return plain; // поки без шифру
+	std::vector<uint8_t> enc = crypto.encrypt_data_whole(plain);
+    if(enc.empty()) sendCode(2);
+    return enc; 
 }
 
 std::vector<uint8_t> EcdhAesProtocol::decryptFrame(const std::vector<uint8_t>& enc) {
-    // TODO: AES розшифрування
-    return enc; // поки без шифру
+    std::vector<uint8_t> dec = crypto.decrypt_data_whole(enc);
+    if(dec.empty()) sendCode(2);
+    return dec; 
 }

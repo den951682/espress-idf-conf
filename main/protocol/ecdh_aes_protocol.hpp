@@ -3,6 +3,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "esp_log.h"
+#include "crypto_ecdh_aes.hpp"
+#include <stdint.h>
+#include <sys/_intsup.h>
 
 class EcdhAesProtocol : public Protocol {
 public:
@@ -14,12 +17,10 @@ public:
     bool send(const uint8_t* data, size_t len) override;
 
 private:
-    WriteCallback writeCb;
-    QueueCallback recvCb;
-    SemaphoreHandle_t sendReady;
-    std::vector<uint8_t> buffer;
     bool handshakeReceived = false;
+    CryptoEcdhAes crypto;
 
+    void sendCode(uint8_t code);
     void sendHandshake();
     bool parseHandshake(const std::vector<uint8_t>& frame);
     std::vector<uint8_t> encryptFrame(const std::vector<uint8_t>& plain);

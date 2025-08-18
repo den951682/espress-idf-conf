@@ -22,4 +22,8 @@ public:
     
  protected:
     ReadyCallback readyCallback;
+    WriteCallback writeCb;
+    QueueCallback recvCb;
+    SemaphoreHandle_t sendReady;
+    std::vector<uint8_t> buffer;
 };
