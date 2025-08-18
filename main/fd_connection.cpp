@@ -11,6 +11,7 @@
 #include "protocol/ecdh_aes_protocol.hpp"
 #include "protocol/passphrase_aes_protocol.hpp"
 #include "esp_log.h"
+#include "protocol/raw_protocol.hpp"
 
 
 namespace {
@@ -25,7 +26,10 @@ FdConnection::FdConnection(int fd,
                                BaseType_t core)
     : _fd(fd), _passPhrase(passPhrase), _taskName(taskName), _stack(stackSize), _prio(priority), _core(core) {}
 
-FdConnection::~FdConnection() { stop(); }
+FdConnection::~FdConnection() { 
+	stop(); 
+	delete protocol;
+}
 
 FdConnection::FdConnection(FdConnection&& other) noexcept { moveFrom(other); }
 
@@ -85,6 +89,7 @@ void FdConnection::stop() {
 }
 
 ssize_t FdConnection::writeAll(const uint8_t* data, size_t len) {
+	//ESP_LOG_BUFFER_HEX(TAG, data, len);
     size_t total = 0;
     int fd = _fd.load();
     if (fd < 0) return -1;

@@ -13,6 +13,7 @@ idf_component_register(
       serial_line_reader.cpp
       protocol/ecdh_aes_protocol.cpp
       protocol/passphrase_aes_protocol.cpp
+      protocol/raw_protocol.cpp
       crypto_ecdh_aes.cpp
       parameter_store.cpp
       parameter_sync.cpp
