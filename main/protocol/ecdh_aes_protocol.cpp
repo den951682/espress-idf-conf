@@ -10,7 +10,7 @@
 
 static const char* TAG = "EcdhAesProtocol";
 
-EcdhAesProtocol::EcdhAesProtocol(): crypto(CryptoEcdhAes::Mode::EPHEMERAL) {
+EcdhAesProtocol::EcdhAesProtocol(std::string passPhrase): crypto(CryptoEcdhAes::Mode::EPHEMERAL), _passPhrase(passPhrase) {
     sendReady = xSemaphoreCreateBinary();
 }
 
@@ -45,7 +45,9 @@ void EcdhAesProtocol::appendReceived(const uint8_t* data, size_t len) {
                 xSemaphoreGive(sendReady);
                 ESP_LOGI(TAG, "Handshake complete");
                 if(readyCallback) readyCallback();
-            }
+            } else {
+				sendCode(0x11);
+			}
         } else {          
             if (recvCb) recvCb(decrypted);
         }
@@ -77,11 +79,11 @@ void EcdhAesProtocol::sendHandshake() {
 	ESP_LOGI(TAG, "Sending HANDSHAKE");
      
     pModel_HandshakeRequest req = pModel_HandshakeRequest_init_zero;
-    char pk_base64[512];  
+    char pk_base64[256];  
     crypto.get_encoded_public_key(pk_base64, sizeof(pk_base64));
-    strncpy(req.text, pk_base64, sizeof(req.text) - 1);
-    req.text[sizeof(req.text) - 1] = '\0'; 
-    uint8_t buffer[512];
+    strncpy(req.text2, pk_base64, sizeof(req.text2) - 1);
+    req.text2[sizeof(req.text2) - 1] = '\0'; 
+    uint8_t buffer[256];
     pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
     if (!pb_encode(&stream, pModel_HandshakeRequest_fields, &req)) {
         ESP_LOGE(TAG, "Handshake encode failed: %s", PB_GET_ERROR(&stream));
@@ -93,13 +95,15 @@ void EcdhAesProtocol::sendHandshake() {
 }
 
 bool EcdhAesProtocol::parseHandshake(const std::vector<uint8_t>& frame) {
-    pModel_HandshakeResponse resp = pModel_HandshakeResponse_init_zero;
+    pModel_HandshakeRequest resp = pModel_HandshakeRequest_init_zero;
     pb_istream_t istream = pb_istream_from_buffer(frame.data(), frame.size());
-    if (!pb_decode(&istream, pModel_HandshakeResponse_fields, &resp)) {
+    if (!pb_decode(&istream, pModel_HandshakeRequest_fields, &resp)) {
         ESP_LOGE(TAG, "Handshake decode failed: %s", PB_GET_ERROR(&istream));
         return false;
     }
-    std::vector<uint8_t> b64(resp.text, resp.text + strlen(resp.text));
+    bool checkPP = strcmp(resp.text, _passPhrase.c_str()) == 0;
+    if(!checkPP) return false;
+    std::vector<uint8_t> b64(resp.text2, resp.text2 + strlen(resp.text2));
     bool res = crypto.apply_other_public(b64);
     return res;
 }

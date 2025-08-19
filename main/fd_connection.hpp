@@ -27,7 +27,7 @@ public:
     explicit FdConnection(int fd,	
     					    const char* passPhrase = nullptr,
                             const char* taskName = "conn_read",
-                            uint16_t stackSize = 4096,
+                            uint16_t stackSize = 8192,
                             UBaseType_t priority = tskIDLE_PRIORITY + 3,
                             BaseType_t core = tskNO_AFFINITY);
     ~FdConnection();

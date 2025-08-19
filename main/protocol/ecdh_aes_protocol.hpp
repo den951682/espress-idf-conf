@@ -9,7 +9,7 @@
 
 class EcdhAesProtocol : public Protocol {
 public:
-    EcdhAesProtocol();
+    EcdhAesProtocol(std::string passPhrase);
     ~EcdhAesProtocol() override;
 
     void init(WriteCallback writeCb, QueueCallback recvCb) override;
@@ -19,6 +19,7 @@ public:
 private:
     bool handshakeReceived = false;
     CryptoEcdhAes crypto;
+    std::string _passPhrase;
 
     void sendCode(uint8_t code);
     void sendHandshake();

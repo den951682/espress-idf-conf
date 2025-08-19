@@ -48,7 +48,7 @@ esp_err_t FdConnection::start() {
     if (_running.load()) return ESP_OK;
     _running.store(true);
     _guarded.store(false);
-    protocol = new EcdhAesProtocol();
+    protocol = new EcdhAesProtocol(_passPhrase);
     protocol -> setReadyCallback([this](){if(_readyCallback) _readyCallback();});
 	sendQueue = xQueueCreate(16, sizeof(SendItem*));
     startSendTask();
