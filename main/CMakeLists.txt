@@ -14,6 +14,7 @@ idf_component_register(
       protocol/ecdh_aes_protocol.cpp
       protocol/passphrase_aes_protocol.cpp
       protocol/raw_protocol.cpp
+      protocol/config_protocol.cpp
       crypto_ecdh_aes.cpp
       parameter_store.cpp
       parameter_sync.cpp

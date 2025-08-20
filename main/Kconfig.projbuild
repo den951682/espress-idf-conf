@@ -18,4 +18,23 @@ menu "Conf Configuration"
     		default "PiroJOKE"
     		help
 			Default passphrase to use in Passphrase ciffer protocols.
+	choice
+        prompt "Default Protocol"
+        default PROTOCOL_EPHEMERAL
+        help
+            Select which protocol to use by default:
+            - Ephemeral AES
+            - AES with Passphrase
+            - Raw (no encryption)
+
+        config PROTOCOL_EPHEMERAL
+            bool "Ephemeral AES"
+
+        config PROTOCOL_PASSPHRASE
+            bool "AES with Passphrase"
+
+        config PROTOCOL_RAW
+            bool "Raw (no encryption)"
+    endchoice
+    
 endmenu

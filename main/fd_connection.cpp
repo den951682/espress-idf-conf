@@ -7,12 +7,11 @@
 #include <unistd.h>
 #include <sstream>
 #include <iomanip>
-
 #include "protocol/ecdh_aes_protocol.hpp"
 #include "protocol/passphrase_aes_protocol.hpp"
-#include "esp_log.h"
 #include "protocol/raw_protocol.hpp"
-
+#include "protocol/config_protocol.hpp"
+#include "esp_log.h"
 
 namespace {
     static const char* TAG = "FdConnection";
@@ -48,7 +47,7 @@ esp_err_t FdConnection::start() {
     if (_running.load()) return ESP_OK;
     _running.store(true);
     _guarded.store(false);
-    protocol = new EcdhAesProtocol(_passPhrase);
+    protocol = createProtocol(_passPhrase);
     protocol -> setReadyCallback([this](){if(_readyCallback) _readyCallback();});
 	sendQueue = xQueueCreate(16, sizeof(SendItem*));
     startSendTask();

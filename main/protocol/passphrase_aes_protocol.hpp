@@ -9,7 +9,7 @@
 
 class PassphraseAesProtocol : public Protocol {
 public:
-    PassphraseAesProtocol(const char* passPhrase);
+    PassphraseAesProtocol(std::string passPhrase);
     ~PassphraseAesProtocol() override;
 
     void init(WriteCallback writeCb, QueueCallback recvCb) override;

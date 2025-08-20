@@ -3,6 +3,7 @@
 #include "driver/gpio.h"
 #include "parameter_store.cpp"
 #include "esp_adc/adc_oneshot.h"
+#include "protocol/config_protocol.hpp"
 
 #define JOY_X_PIN    34
 #define JOY_Y_PIN    35
@@ -56,6 +57,8 @@ private:
         gpio_set_direction((gpio_num_t)JOY_SW_PIN, GPIO_MODE_INPUT);
         gpio_pullup_en((gpio_num_t)JOY_SW_PIN);
 
+        int delay = 200;
+        if(isFast()) delay = 20;
         while (true) {
             int rawX = 0, rawY = 0;
             ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL_6, &rawX));
@@ -65,7 +68,7 @@ private:
             //int sw   = gpio_get_level((gpio_num_t)JOY_SW_PIN);
             store_.setInt(paramstore::ParameterId::JoystickX, rawX);
             store_.setInt(paramstore::ParameterId::JoystickY, rawY);
-            vTaskDelay(pdMS_TO_TICKS(200));
+            vTaskDelay(pdMS_TO_TICKS(delay));
         }
     }
 
