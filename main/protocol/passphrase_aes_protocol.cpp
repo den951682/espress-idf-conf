@@ -28,7 +28,9 @@ void PassphraseAesProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
     buffer.clear();
     handshakeReceived = false;
     xSemaphoreTake(sendReady, 0); 
-    sendHandshake();
+    //no header
+	uint8_t headerLen = 0;
+	writeCb(&headerLen, 1);
 }
 
 void PassphraseAesProtocol::appendReceived(const uint8_t* data, size_t len) {
@@ -45,9 +47,10 @@ void PassphraseAesProtocol::appendReceived(const uint8_t* data, size_t len) {
         if (!handshakeReceived) {
             if (parseHandshake(decrypted)) {
                 handshakeReceived = true;
-                xSemaphoreGive(sendReady);
                 ESP_LOGI(TAG, "Handshake complete");
                 if(readyCallback) readyCallback();
+                sendHandshake();
+                xSemaphoreGive(sendReady);
             }
         } else {          
             if (recvCb) recvCb(decrypted);
@@ -72,11 +75,7 @@ void PassphraseAesProtocol::sendCode(uint8_t code) {
     writeCb(&code, 1);
 }
 
-void PassphraseAesProtocol::sendHandshake() {
-	//no header
-	uint8_t headerLen = 0;
-	writeCb(&headerLen, 1);
-	
+void PassphraseAesProtocol::sendHandshake() {	
 	ESP_LOGI(TAG, "Sending HANDSHAKE");
      
     pModel_HandshakeRequest req = pModel_HandshakeRequest_init_zero;

@@ -13,7 +13,7 @@ class JoystickTask {
 public:
     JoystickTask(paramstore::ParameterStore& params) : store_(params) {}
 
-    void start(const char* name = "JoystickTask", uint32_t stackSize = 2048, UBaseType_t priority = 5) {
+    void start(const char* name = "JoystickTask", uint32_t stackSize = 4096, UBaseType_t priority = 5) {
         xTaskCreatePinnedToCore(
             &JoystickTask::taskEntry,
             name,

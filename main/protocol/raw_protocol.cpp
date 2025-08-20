@@ -24,7 +24,9 @@ void RawProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
     buffer.clear();
     handshakeReceived = false;
     xSemaphoreTake(sendReady, 0); 
-    sendHandshake();
+    //no header
+	uint8_t headerLen = 0;
+	writeCb(&headerLen, 1);
 }
 
 void RawProtocol::appendReceived(const uint8_t* data, size_t len) {
@@ -40,9 +42,10 @@ void RawProtocol::appendReceived(const uint8_t* data, size_t len) {
         if (!handshakeReceived) {
             if (parseHandshake(frame)) {
                 handshakeReceived = true;
-                xSemaphoreGive(sendReady);
                 ESP_LOGI(TAG, "Handshake complete");
                 if(readyCallback) readyCallback();
+                sendHandshake();
+                xSemaphoreGive(sendReady);
             } else {
 				sendCode(1);
 			}
@@ -68,11 +71,7 @@ void RawProtocol::sendCode(uint8_t code) {
     writeCb(&code, 1);
 }
 
-void RawProtocol::sendHandshake() {
-	//no header
-	uint8_t headerLen = 0;
-	writeCb(&headerLen, 1);
-     
+void RawProtocol::sendHandshake() {     
     pModel_HandshakeRequest req = pModel_HandshakeRequest_init_zero;
     strncpy(req.text, "HANDSHAKE", sizeof(req.text) - 1);
 

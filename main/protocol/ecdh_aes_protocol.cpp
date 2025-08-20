@@ -44,10 +44,10 @@ void EcdhAesProtocol::appendReceived(const uint8_t* data, size_t len) {
         if (!handshakeReceived) {
             if (parseHandshake(decrypted)) {
                 handshakeReceived = true;
-                xSemaphoreGive(sendReady);
                 ESP_LOGI(TAG, "Handshake complete");
                 if(readyCallback) readyCallback();
                 sendHandshake();
+                xSemaphoreGive(sendReady);
             } else {
 				sendCode(0x11);
 			}

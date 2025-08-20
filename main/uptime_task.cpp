@@ -7,7 +7,7 @@ class UptimeTask {
 public:
     UptimeTask(paramstore::ParameterStore& store) : store_(store) {}
 
-    void start(const char* name = "UptimeTask", uint32_t stackSize = 2048, UBaseType_t priority = 5) {
+    void start(const char* name = "UptimeTask", uint32_t stackSize = 4096, UBaseType_t priority = 5) {
         xTaskCreatePinnedToCore(
             &UptimeTask::taskEntry,   
             name,

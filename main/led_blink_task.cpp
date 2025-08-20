@@ -11,7 +11,7 @@ public:
     LedBlinkTask(paramstore::ParameterStore& store, gpio_num_t pin)
         : store_(store), pin_(pin) {}
 
-    void start(const char* name = "LedBlinkTask", uint32_t stackSize = 2048, UBaseType_t priority = 5) {
+    void start(const char* name = "LedBlinkTask", uint32_t stackSize = 4096, UBaseType_t priority = 5) {
         gpio_config_t io_conf = {};
         io_conf.intr_type = GPIO_INTR_DISABLE;
         io_conf.mode = GPIO_MODE_OUTPUT;
