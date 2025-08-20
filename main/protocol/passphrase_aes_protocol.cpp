@@ -15,8 +15,12 @@ PassphraseAesProtocol::PassphraseAesProtocol(std::string passPhrase): crypto(Cry
 }
 
 PassphraseAesProtocol::~PassphraseAesProtocol() {
-    if (sendReady) vSemaphoreDelete(sendReady);
+	 if (sendReady) {
+		vSemaphoreDelete(sendReady);
+		sendReady = nullptr;
+	}
 }
+
 
 void PassphraseAesProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
     this->writeCb = writeCb;

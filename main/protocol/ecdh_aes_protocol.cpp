@@ -24,7 +24,9 @@ void EcdhAesProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
     buffer.clear();
     handshakeReceived = false;
     xSemaphoreTake(sendReady, 0); 
-    sendHandshake();
+    //no header
+	uint8_t headerLen = 0;
+	writeCb(&headerLen, 1);
 }
 
 void EcdhAesProtocol::appendReceived(const uint8_t* data, size_t len) {
@@ -45,6 +47,7 @@ void EcdhAesProtocol::appendReceived(const uint8_t* data, size_t len) {
                 xSemaphoreGive(sendReady);
                 ESP_LOGI(TAG, "Handshake complete");
                 if(readyCallback) readyCallback();
+                sendHandshake();
             } else {
 				sendCode(0x11);
 			}
@@ -72,10 +75,6 @@ void EcdhAesProtocol::sendCode(uint8_t code) {
 }
 
 void EcdhAesProtocol::sendHandshake() {
-	//no header
-	uint8_t headerLen = 0;
-	writeCb(&headerLen, 1);
-	
 	ESP_LOGI(TAG, "Sending HANDSHAKE");
      
     pModel_HandshakeRequest req = pModel_HandshakeRequest_init_zero;
@@ -102,7 +101,10 @@ bool EcdhAesProtocol::parseHandshake(const std::vector<uint8_t>& frame) {
         return false;
     }
     bool checkPP = strcmp(resp.text, _passPhrase.c_str()) == 0;
-    if(!checkPP) return false;
+    if(!checkPP) {
+		ESP_LOGW(TAG, "Bound phrase is wrong");
+		return false;
+	}
     std::vector<uint8_t> b64(resp.text2, resp.text2 + strlen(resp.text2));
     bool res = crypto.apply_other_public(b64);
     return res;

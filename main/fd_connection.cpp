@@ -27,7 +27,10 @@ FdConnection::FdConnection(int fd,
 
 FdConnection::~FdConnection() { 
 	stop(); 
-	delete protocol;
+	if(protocol) {
+		delete protocol;
+		protocol = nullptr;
+	}
 }
 
 FdConnection::FdConnection(FdConnection&& other) noexcept { moveFrom(other); }
