@@ -35,7 +35,7 @@ private:
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_entropy_context entropy;
     mbedtls_gcm_context aes_ctx;
-    uint8_t aes_key[16]; 
+    uint8_t aes_key[32]; 
 
     bool aes_ready = false;
     bool ecdh_ready = false;
