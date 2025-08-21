@@ -4,15 +4,15 @@
 #include "raw_protocol.hpp"
 #include "sdkconfig.h"
 
-Protocol* createProtocol(const char* passPhrase) {
+std::unique_ptr<Protocol> createProtocol(const char* passPhrase) {
 #if defined(CONFIG_PROTOCOL_EPHEMERAL)
-    return new EcdhAesProtocol(passPhrase);
+    return std::make_unique<EcdhAesProtocol>(passPhrase);
 #elif defined(CONFIG_PROTOCOL_PASSPHRASE)
-    return new PassphraseAesProtocol(passPhrase);
+    return std::make_unique<PassphraseAesProtocol>(passPhrase);
 #elif defined(CONFIG_PROTOCOL_RAW)
-    return new RawProtocol(passPhrase);
+    return std::make_unique<RawProtocol>(passPhrase);
 #else
-    return new EcdhAesProtocol(passPhrase);
+    return std::make_unique<EcdhAesProtocol>(passPhrase);
 #endif
 }
 

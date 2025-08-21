@@ -18,6 +18,7 @@ public:
 
 private:
     bool handshakeReceived = false;
+    std::string _passPhrase;
     CryptoEcdhAes crypto;
 
     void sendCode(uint8_t code);

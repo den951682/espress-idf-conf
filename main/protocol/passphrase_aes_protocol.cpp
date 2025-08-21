@@ -10,19 +10,18 @@
 
 static const char* TAG = "PassphraseAesProtocol";
 
-PassphraseAesProtocol::PassphraseAesProtocol(std::string passPhrase): crypto(CryptoEcdhAes::Mode::PASSPHRASE, passPhrase.c_str()) {
-    sendReady = xSemaphoreCreateBinary();
+PassphraseAesProtocol::PassphraseAesProtocol(std::string passPhrase)
+    : _passPhrase(std::move(passPhrase)),
+      crypto(CryptoEcdhAes::Mode::PASSPHRASE, _passPhrase.c_str()){
+	ESP_LOGI(TAG, "PassphraseAesProtocol constructor");
 }
 
 PassphraseAesProtocol::~PassphraseAesProtocol() {
-	 if (sendReady) {
-		vSemaphoreDelete(sendReady);
-		sendReady = nullptr;
-	}
+	ESP_LOGI(TAG, "PassphraseAesProtocol destructor");
 }
 
-
 void PassphraseAesProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
+	ESP_LOGI(TAG, "PassphraseAesProtocol init");
     this->writeCb = writeCb;
     this->recvCb = recvCb;
     buffer.clear();
@@ -34,6 +33,11 @@ void PassphraseAesProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
 }
 
 void PassphraseAesProtocol::appendReceived(const uint8_t* data, size_t len) {
+	if(isClosed.load()) {
+		ESP_LOGI(TAG, "PassphraseAesProtocol append received after close");
+		return;
+	}
+	ESP_LOGI(TAG, "PassphraseAesProtocol append received");
     buffer.insert(buffer.end(), data, data + len);
     while (true) {
         if (buffer.empty()) return;
@@ -53,12 +57,16 @@ void PassphraseAesProtocol::appendReceived(const uint8_t* data, size_t len) {
                 xSemaphoreGive(sendReady);
             }
         } else {          
-            if (recvCb) recvCb(decrypted);
+            if (recvCb && !isClosed.load()) recvCb(decrypted);
         }
     }
 }
 
 bool PassphraseAesProtocol::send(const uint8_t* data, size_t len) {
+	if(isClosed.load()) {
+		ESP_LOGI(TAG, "PassphraseAesProtocol send after close");
+		return false;
+	}
     if (xSemaphoreTake(sendReady, pdMS_TO_TICKS(5000)) == pdFALSE) {
         ESP_LOGW(TAG, "Send blocked: handshake not complete");
         return false;
@@ -66,13 +74,21 @@ bool PassphraseAesProtocol::send(const uint8_t* data, size_t len) {
     xSemaphoreGive(sendReady);
     auto encrypted = encryptFrame({data, data + len});
     uint8_t hdr = encrypted.size();
-    writeCb(&hdr, 1);
-    writeCb(encrypted.data(), encrypted.size());
+    if(!isClosed.load()) {
+	    writeCb(&hdr, 1);
+	    writeCb(encrypted.data(), encrypted.size());
+    }
     return true;
 }
 
 void PassphraseAesProtocol::sendCode(uint8_t code) {
-    writeCb(&code, 1);
+	if(isClosed.load()) {
+		ESP_LOGI(TAG, "PassphraseAesProtocol sendCode after close");
+		return;
+	}
+	if(!isClosed.load()){
+    	writeCb(&code, 1);
+    }
 }
 
 void PassphraseAesProtocol::sendHandshake() {	

@@ -10,13 +10,9 @@
 
 static const char* TAG = "EcdhAesProtocol";
 
-EcdhAesProtocol::EcdhAesProtocol(std::string passPhrase): crypto(CryptoEcdhAes::Mode::EPHEMERAL), _passPhrase(passPhrase) {
-    sendReady = xSemaphoreCreateBinary();
-}
+EcdhAesProtocol::EcdhAesProtocol(std::string passPhrase): crypto(CryptoEcdhAes::Mode::EPHEMERAL), _passPhrase(passPhrase) {}
 
-EcdhAesProtocol::~EcdhAesProtocol() {
-    if (sendReady) vSemaphoreDelete(sendReady);
-}
+EcdhAesProtocol::~EcdhAesProtocol() {}
 
 void EcdhAesProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
     this->writeCb = writeCb;

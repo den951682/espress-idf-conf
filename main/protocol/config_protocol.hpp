@@ -1,5 +1,6 @@
 #pragma once
 #include "protocol.hpp"
+#include <memory>
 
-Protocol* createProtocol(const char* passPhrase);
+std::unique_ptr<Protocol> createProtocol(const char* passPhrase);
 bool isFast();

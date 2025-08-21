@@ -10,13 +10,9 @@
 
 static const char* TAG = "RawProtocol";
 
-RawProtocol::RawProtocol(std::string passPhrase): _passPhrase(passPhrase) {
-    sendReady = xSemaphoreCreateBinary();
-}
+RawProtocol::RawProtocol(std::string passPhrase): _passPhrase(passPhrase) {}
 
-RawProtocol::~RawProtocol() {
-    if (sendReady) vSemaphoreDelete(sendReady);
-}
+RawProtocol::~RawProtocol() {}
 
 void RawProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
     this->writeCb = writeCb;

@@ -7,6 +7,7 @@
 #include <atomic>
 #include "esp_err.h"
 #include "protocol/protocol.hpp"
+#include <memory>
 
 extern "C" {
 #include "freertos/FreeRTOS.h"
@@ -64,7 +65,7 @@ private:
     ssize_t writeAll(const uint8_t* data, size_t len);
     static std::string toHex(const std::vector<uint8_t>& data);
 
-    Protocol* protocol;
+    std::unique_ptr<Protocol> protocol;
     QueueHandle_t sendQueue;
     std::atomic<int> _fd{-1};
     const char* _passPhrase;
@@ -75,7 +76,9 @@ private:
 
     std::atomic<bool> _running{false};
     std::atomic<bool> _guarded{false};
+    std::atomic<bool> _closeCbSent{false};
     TaskHandle_t _task{nullptr};
+    TaskHandle_t _sendTask{nullptr};
 
     std::mutex _writeMtx;
     DataCallback _dataCB;

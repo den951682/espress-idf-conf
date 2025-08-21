@@ -12,7 +12,8 @@
 #include "protocol/raw_protocol.hpp"
 #include "protocol/config_protocol.hpp"
 #include "esp_log.h"
-
+#include <memory>
+	
 namespace {
     static const char* TAG = "FdConnection";
 }
@@ -23,26 +24,20 @@ FdConnection::FdConnection(int fd,
                                uint16_t stackSize,
                                UBaseType_t priority,
                                BaseType_t core)
-    : _fd(fd), _passPhrase(passPhrase), _taskName(taskName), _stack(stackSize), _prio(priority), _core(core) {}
+    : _fd(fd), _passPhrase(passPhrase), _taskName(taskName), _stack(stackSize), _prio(priority), _core(core) {
+		ESP_LOGI(TAG, "Connection constructor");
+	}
 
 FdConnection::~FdConnection() { 
-	stop(); 
-	if(protocol) {
-		delete protocol;
-		protocol = nullptr;
-	}
+	ESP_LOGI(TAG, "Connection destructor");
 }
 
 FdConnection::FdConnection(FdConnection&& other) noexcept { moveFrom(other); }
 
-FdConnection& FdConnection::operator=(FdConnection&& other) noexcept {
-    if (this != &other) { stop(); moveFrom(other); }
-    return *this;
-}
-
 bool FdConnection::isRunning() const { return _running.load(); }
 
 esp_err_t FdConnection::start() {
+	ESP_LOGI(TAG, "Connection start");
     if (_fd.load() < 0) {
         ESP_LOGE(TAG, "start(): invalid fd");
         return ESP_FAIL;
@@ -50,8 +45,9 @@ esp_err_t FdConnection::start() {
     if (_running.load()) return ESP_OK;
     _running.store(true);
     _guarded.store(false);
-    protocol = createProtocol(_passPhrase);
-    protocol -> setReadyCallback([this](){if(_readyCallback) _readyCallback();});
+    protocol = /*std::make_unique<EcdhAesProtocol>(_passPhrase);*/createProtocol(_passPhrase);
+    ESP_LOGI(TAG, "protocol new=%p", protocol.get());
+    protocol.get() -> setReadyCallback([this](){if(_readyCallback) _readyCallback();});
 	sendQueue = xQueueCreate(16, sizeof(SendItem*));
     startSendTask();
     BaseType_t ok = xTaskCreatePinnedToCore(&FdConnection::taskTrampoline,
@@ -68,26 +64,32 @@ esp_err_t FdConnection::start() {
         ESP_LOGE(TAG, "Failed to create read task (err=%ld)", (long)ok);
         return ESP_FAIL;
     }
+    ESP_LOGI(TAG, "Connection started");
     return ESP_OK;
 }
 
 void FdConnection::stop() {
     if (!_running.exchange(false)) return; 
-
+    ESP_LOGI(TAG, "Connection stop");
+    protocol.get() -> close();
     int fd = _fd.exchange(-1);
     if (fd >= 0) {
 		ESP_LOGW(TAG, "local stop: closing fd=%d", fd);
         ::close(fd);
     }
 
-    for (int i = 0; i < 50; ++i) { 
-        if (_task == nullptr) break;
-        vTaskDelay(1);
+     if (sendQueue) {
+        SendItem* poison = nullptr;
+        xQueueSend(sendQueue, &poison, 0);
+        ESP_LOGI(TAG, "Connection send poison pill");
     }
-    if (_task) {
-        vTaskDelete(_task);
-        _task = nullptr;
-    }
+    
+   while(_sendTask) vTaskDelay(1);
+    
+   vQueueDelete(sendQueue);
+   sendQueue=nullptr;
+   ESP_LOGI(TAG, "Connection stop end");
+   if (!_closeCbSent.exchange(true) && _closeCB) _closeCB();
 }
 
 ssize_t FdConnection::writeAll(const uint8_t* data, size_t len) {
@@ -136,8 +138,10 @@ ssize_t FdConnection::sendLine(const std::string& s) {
 }
 
 void FdConnection::enqueueSend(const uint8_t* data, size_t len) {
-    auto* item = new SendItem{std::vector<uint8_t>(data, data + len)};
-    xQueueSend(sendQueue, &item, portMAX_DELAY);
+	if(_running.load()){
+    	auto* item = new SendItem{std::vector<uint8_t>(data, data + len)};
+    	xQueueSend(sendQueue, &item, portMAX_DELAY);
+    }
 }
 
 void FdConnection::taskTrampoline(void* arg) {
@@ -159,7 +163,7 @@ void FdConnection::taskLoop() {
         ssize_t n = ::read(fd, buf.data(), buf.size());
         if (n > 0) {
 			if(_guarded) {
-				protocol -> appendReceived(buf.data(), n);
+				protocol.get() -> appendReceived(buf.data(), n);
 				continue;
 			} else {
             	accum.insert(accum.end(), buf.begin(), buf.begin() + n);
@@ -173,7 +177,7 @@ void FdConnection::taskLoop() {
                     }    
                     std::string line(reinterpret_cast<const char*>(lineBytes.data()), lineBytes.size());
                     if(line.ends_with("guard")) {
-					  protocol->init(
+					  protocol.get()->init(
     			[this](const uint8_t* data, size_t len) {
        					 	FdConnection::sendBytes(data, len);
     					 },
@@ -186,7 +190,7 @@ void FdConnection::taskLoop() {
 					  );
 					  _guarded.store(true); 
 					  accum.erase(accum.begin(), accum.begin() + i + 1);
-					  protocol -> appendReceived(accum.data(), accum.size());
+					  protocol.get() -> appendReceived(accum.data(), accum.size());
 					  break;						
 					}
                     if (_onLine) {
@@ -217,39 +221,65 @@ void FdConnection::taskLoop() {
         ESP_LOGE(TAG, "read() failed: errno=%d (%s)", errno, strerror(errno));
         break;
     }
-    _closeCB();
-    _running.store(false);
     int fd = _fd.exchange(-1);
     if (fd >= 0) { ::close(fd); }
     ESP_LOGI(TAG, "read task exit");
+    stop();
 }
 
 void FdConnection::startSendTask() {
-    xTaskCreatePinnedToCore(&FdConnection::sendTask, "conn_send", 4096, this, _prio, nullptr, _core);
+	ESP_LOGI(TAG, "Connection startSendTask");
+    xTaskCreatePinnedToCore(&FdConnection::sendTask, "conn_send", 4096, this, _prio, &_sendTask, _core);
 }
 
 void FdConnection::sendTask(void* arg) {
+	ESP_LOGI(TAG, "Connection sendTask started");
 	auto* self = static_cast<FdConnection*>(arg);
     SendItem* item;
-    while (self->_running) {
+    while (self->_running.load()) {
         if (xQueueReceive(self->sendQueue, &item, portMAX_DELAY) == pdTRUE) {
-			self->protocol->send(item->data.data(), item->data.size());
+			if (!item) break;
+			if(self -> protocol.get() && self -> _running) self->protocol.get()->send(item->data.data(), item->data.size());
             delete item;
         }
     }
-    vTaskDelete(nullptr);
+    ESP_LOGI(TAG, "Connection sendTask exit");
+    self->_sendTask = nullptr; 
+    vTaskDelete(nullptr); 
+}
+
+FdConnection& FdConnection::operator=(FdConnection&& other) noexcept {
+    if (this != &other) {
+        stop();                
+        moveFrom(other);
+    }
+    return *this;
 }
 
 void FdConnection::moveFrom(FdConnection& other) noexcept {
     _fd.store(other._fd.exchange(-1));
-    _taskName = other._taskName;
-    _stack = other._stack;
-    _prio = other._prio;
-    _core = other._core;
+    _passPhrase = other._passPhrase;
+    _taskName   = other._taskName;
+    _stack      = other._stack;
+    _prio       = other._prio;
+    _core       = other._core;
+
     _running.store(other._running.exchange(false));
-    _task = other._task; other._task = nullptr;
-    _onLine = std::move(other._onLine);
+    _guarded.store(other._guarded.exchange(false));
+    _closeCbSent.store(other._closeCbSent.exchange(false));
+
+
+    _task     = other._task;     other._task = nullptr;
+    _sendTask = other._sendTask; other._sendTask = nullptr;
+    sendQueue = other.sendQueue; other.sendQueue = nullptr;
+
+    _dataCB       = std::move(other._dataCB);
+    _onLine       = std::move(other._onLine);
+    _readyCallback= std::move(other._readyCallback);
+    _closeCB      = std::move(other._closeCB);
+    protocol = std::move(other.protocol);
 }
+
 
 std::string FdConnection::toHex(const std::vector<uint8_t>& data) {
     std::ostringstream oss;

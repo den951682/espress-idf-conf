@@ -24,6 +24,7 @@
 using namespace paramstore;
 
 enum class AppCommandType : uint8_t {
+	CleanupConnection,
 	DataReceived,
 	RestartConnection,
 	RestartServer,
@@ -50,7 +51,10 @@ LedBlinkTask blinkTask(store, GPIO_NUM_2);
 UptimeTask uptime(store);
 
 static void setupConnection(int fd) {
-	delete g_conn; g_conn = nullptr;
+	if (g_conn) {
+		delete g_conn;
+		g_conn = nullptr;
+	}
     std::string passPhrase = store.getString(ParameterId::PassPhrase);
     g_conn = new FdConnection(fd, passPhrase.c_str());
     g_conn->setReadyCallback([](){
@@ -59,7 +63,10 @@ static void setupConnection(int fd) {
         xQueueSend(appQueue, &cmd, 0);
 	});
     g_conn->setCloseCallback([](){
+		ESP_LOGI("APP", "Close Connection callback");
 		parameterSync.removeConnection();
+		AppCommand* cmd = new AppCommand{AppCommandType::CleanupConnection, {}};
+        xQueueSend(appQueue, &cmd, 0);
 	});
 	g_conn->setDataCallback([](const uint8_t* data, size_t len){
 		 ESP_LOGI("APP", "Data received:");
@@ -159,6 +166,14 @@ void appTask(void* arg) {
     for (;;) {
         if (xQueueReceive(appQueue, &cmd, portMAX_DELAY) == pdTRUE) {
             switch (cmd -> type) {
+				case AppCommandType::CleanupConnection:
+    				if (g_conn) {
+						g_conn -> stop();
+						delete g_conn;
+						g_conn = nullptr;
+					}
+    				break;
+    
 				case AppCommandType::DataReceived:
                 	if (std::holds_alternative<Data>(cmd -> data)) {
                     	handleDataReceivedCommand(std::get<Data>(cmd -> data).bytes);
@@ -166,19 +181,13 @@ void appTask(void* arg) {
 						ESP_LOGW("APP", "Wrong  AppCommandType::DataReceived");
 				    }
                 	break;
-                
+                              	
                 case AppCommandType::RestartConnection:
-                    if(g_conn) {
-						g_conn -> stop();
-						g_conn = nullptr;
-					}
+                    g_conn -> stop();
                 	break;
                 	
                 case AppCommandType::RestartServer:
-                     if(g_conn) {
-						g_conn -> stop();
-						g_conn = nullptr;
-					}
+                    g_conn -> stop();
 					bt.stop();
 					start_bt();
                 	break;
@@ -190,14 +199,14 @@ void appTask(void* arg) {
 
                 default:
                     break;
-                delete cmd;
             }
+            delete cmd;
         }
     }
 }
 
 extern "C" void app_main(void) {
-	appQueue = xQueueCreate(16, sizeof(AppCommand));
+	appQueue = xQueueCreate(16, sizeof(AppCommand*));
     xTaskCreatePinnedToCore(appTask, "appTask", 4096, nullptr, 5, nullptr, tskNO_AFFINITY);
     setupStore();
     start_bt();
