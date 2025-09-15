@@ -20,6 +20,7 @@ idf_component_register(
       parameter_sync.cpp
       joystick_task.cpp
       led_blink_task.cpp
+      lora_connection_task.cpp
       uptime_task.cpp
       send_delayed.cpp
       ${PROTO_GOOGLE_SRCS}  # <-- Google descriptor first

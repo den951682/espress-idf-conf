@@ -18,6 +18,7 @@
 #include "message_type.cpp"
 #include "joystick_task.cpp"
 #include "led_blink_task.cpp"
+#include "lora_connection_task.cpp"
 #include "uptime_task.cpp"
 #include "send_delayed.cpp"
 
@@ -48,6 +49,7 @@ ParameterStore store;
 ParameterSync parameterSync(store);
 JoystickTask joystickTask(store);
 LedBlinkTask blinkTask(store, GPIO_NUM_2);
+LoraConnectionTask loraConnectionTask(store);
 UptimeTask uptime(store);
 
 static void setupConnection(int fd) {
@@ -205,6 +207,23 @@ void appTask(void* arg) {
     }
 }
 
+extern "C" void lora_test_task(void* arg) {
+    auto* lora = static_cast<LoraConnectionTask*>(arg);
+
+    int counter = 0;
+    while (true) {
+        std::string msg = "Msg #" + std::to_string(counter++);
+        if (lora->sendMessage(msg)) {
+            ESP_LOGI("LoraTestTask", "Queued: %s", msg.c_str());
+        } else {
+            ESP_LOGW("LoraTestTask", "Failed to queue message");
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000)); 
+    }
+}
+
+
 extern "C" void app_main(void) {
 	appQueue = xQueueCreate(16, sizeof(AppCommand*));
     xTaskCreatePinnedToCore(appTask, "appTask", 4096, nullptr, 5, nullptr, tskNO_AFFINITY);
@@ -213,5 +232,16 @@ extern "C" void app_main(void) {
     startReader();
     blinkTask.start();
     joystickTask.start();
+    loraConnectionTask.start();
     uptime.start();
+    
+     xTaskCreatePinnedToCore(
+        lora_test_task,
+        "LoraTestTask",
+        4096,
+        &loraConnectionTask,
+        4,
+        nullptr,
+        tskNO_AFFINITY
+    );
 }	
