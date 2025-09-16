@@ -22,6 +22,7 @@ idf_component_register(
       led_blink_task.cpp
       lora_connection_task.cpp
       uptime_task.cpp
+      utils.hpp
       send_delayed.cpp
       ${PROTO_GOOGLE_SRCS}  # <-- Google descriptor first
       ${PROTO_SRCS}         # <-- Then all the rest

@@ -12,6 +12,7 @@
 #include "protocol/raw_protocol.hpp"
 #include "protocol/config_protocol.hpp"
 #include "esp_log.h"
+#include "utils.hpp"
 #include <memory>
 	
 namespace {
@@ -172,21 +173,26 @@ void FdConnection::taskLoop() {
            		for (size_t i = 0; i < accum.size(); i++) {
                	 if (accum[i] == '\n') {
                 	std::vector<uint8_t> lineBytes(accum.begin() + start, accum.begin() + i);
-                    if (!lineBytes.empty() && lineBytes.back() == '\r') {
-                        lineBytes.pop_back();
-                    }    
-                    std::string line(reinterpret_cast<const char*>(lineBytes.data()), lineBytes.size());
+                    std::string line = utils::toCleanString(lineBytes);
+                    start = i + 1;
+                    auto pos = line.find("lora");
+					if (pos != std::string::npos) {
+					    int num = std::stoi(line.substr(pos + 4));
+					    ESP_LOGI("FdConnection", "Routing to LoRa %d", num);
+					    continue;
+					}
+
                     if(line.ends_with("guard")) {
-					  protocol.get()->init(
-    			[this](const uint8_t* data, size_t len) {
-       					 	FdConnection::sendBytes(data, len);
-    					 },
-    			 [this](std::vector<uint8_t> msg) {
-       					 	ESP_LOGI("FdConnection", "Got message size=%u, data=%s", msg.size(), toHex(msg).c_str());
-       					 	if(_dataCB) {
-								_dataCB(msg.data(), msg.size());	
-							}
-   						 }
+						protocol.get()->init(
+			    			[this](const uint8_t* data, size_t len) {
+			       					 	FdConnection::sendBytes(data, len);
+			    					 },
+			    			[this](std::vector<uint8_t> msg) {
+			       					 	ESP_LOGI("FdConnection", "Got message size=%u, data=%s", msg.size(), toHex(msg).c_str());
+			       					 	if(_dataCB) {
+											_dataCB(msg.data(), msg.size());	
+										}
+			   						 }
 					  );
 					  _guarded.store(true); 
 					  accum.erase(accum.begin(), accum.begin() + i + 1);
@@ -196,7 +202,6 @@ void FdConnection::taskLoop() {
                     if (_onLine) {
                         _onLine(line);
                     }
-                    start = i + 1;
                 }
            	   }
 
