@@ -7,6 +7,7 @@
 #include <atomic>
 #include "esp_err.h"
 #include "protocol/protocol.hpp"
+#include "lora_router.hpp"
 #include <memory>
 
 extern "C" {
@@ -26,11 +27,13 @@ public:
     using ReadyCallback = std::function<void()>;
     using CloseCallback = std::function<void()>;
     explicit FdConnection(int fd,	
+    						LoraRouter* loraRouter = nullptr,
     					    const char* passPhrase = nullptr,
                             const char* taskName = "conn_read",
                             uint16_t stackSize = 8192,
                             UBaseType_t priority = tskIDLE_PRIORITY + 3,
-                            BaseType_t core = tskNO_AFFINITY);
+                            BaseType_t core = tskNO_AFFINITY
+                         );
     ~FdConnection();
 
     FdConnection(const FdConnection&) = delete;
@@ -68,6 +71,7 @@ private:
     std::unique_ptr<Protocol> protocol;
     QueueHandle_t sendQueue;
     std::atomic<int> _fd{-1};
+    LoraRouter* loraRouter_;
     const char* _passPhrase;
     const char* _taskName;
     uint16_t _stack;
@@ -77,6 +81,7 @@ private:
     std::atomic<bool> _running{false};
     std::atomic<bool> _guarded{false};
     std::atomic<bool> _closeCbSent{false};
+    std::atomic<int32_t> _loraAddress{0};
     TaskHandle_t _task{nullptr};
     TaskHandle_t _sendTask{nullptr};
 

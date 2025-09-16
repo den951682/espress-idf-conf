@@ -20,12 +20,14 @@ namespace {
 }
 
 FdConnection::FdConnection(int fd,
+							   LoraRouter* loraRouter,
 							   const char* passPhrase,
                                const char* taskName,
                                uint16_t stackSize,
                                UBaseType_t priority,
-                               BaseType_t core)
-    : _fd(fd), _passPhrase(passPhrase), _taskName(taskName), _stack(stackSize), _prio(priority), _core(core) {
+                               BaseType_t core
+                          )
+    : _fd(fd), loraRouter_(loraRouter), _passPhrase(passPhrase), _taskName(taskName), _stack(stackSize), _prio(priority), _core(core) {
 		ESP_LOGI(TAG, "Connection constructor");
 	}
 
@@ -163,7 +165,9 @@ void FdConnection::taskLoop() {
 
         ssize_t n = ::read(fd, buf.data(), buf.size());
         if (n > 0) {
-			if(_guarded) {
+			if(_loraAddress.load() > 0) {
+				loraRouter_ -> routeToLora(_loraAddress, buf.data(), n);
+			} else if(_guarded) {
 				protocol.get() -> appendReceived(buf.data(), n);
 				continue;
 			} else {
@@ -175,10 +179,14 @@ void FdConnection::taskLoop() {
                 	std::vector<uint8_t> lineBytes(accum.begin() + start, accum.begin() + i);
                     std::string line = utils::toCleanString(lineBytes);
                     start = i + 1;
+                    
                     auto pos = line.find("lora");
 					if (pos != std::string::npos) {
 					    int num = std::stoi(line.substr(pos + 4));
-					    ESP_LOGI("FdConnection", "Routing to LoRa %d", num);
+					    ESP_LOGI("FdConnection", "Will route to LoRa %d", num);
+					    _loraAddress.store(num); 
+					    accum.erase(accum.begin(), accum.begin() + i + 1);
+					 	loraRouter_ -> routeToLora(_loraAddress, accum.data(), accum.size());
 					    continue;
 					}
 
@@ -199,6 +207,7 @@ void FdConnection::taskLoop() {
 					  protocol.get() -> appendReceived(accum.data(), accum.size());
 					  break;						
 					}
+					
                     if (_onLine) {
                         _onLine(line);
                     }

@@ -1,3 +1,4 @@
+#pragma once
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/uart.h"
@@ -14,9 +15,11 @@
 #define LORA_M1_GPIO GPIO_NUM_22
 
 struct LoraMessage {
-    char data[64];
-    size_t len;
-    uint16_t addr;
+    static constexpr size_t MAX_LEN = 256;
+
+    uint16_t addr = 0;                       
+    size_t len = 0;                          
+    std::array<uint8_t, MAX_LEN> data{};    
 };
 
 class LoraConnectionTask {
@@ -98,28 +101,16 @@ public:
         }
     }
     
-    bool sendMessage(const std::string& text, uint16_t destAddr = 0xffff) {
+    bool sendMessage(const uint8_t* data, size_t len, uint16_t destAddr = 0xffff) {
         if (txQueue_) {
 			LoraMessage msg;
-			msg.len = std::min(text.size(), sizeof(msg.data) - 1);
-	        memcpy(msg.data, text.c_str(), msg.len);
-	        msg.data[msg.len] = '\0';	
+	        msg.len = std::min(len, msg.data.size());
+	        memcpy(msg.data.data(), data, msg.len);
 	        msg.addr = destAddr;
 	        return xQueueSend(txQueue_, &msg, 0) == pdTRUE;
         }
         return false;
     }
-
-    bool receiveMessage(std::string& out) {
-	    if (rxQueue_) {
-	        LoraMessage m;
-	        if (xQueueReceive(rxQueue_, &m, 0) == pdTRUE) {
-	            out.assign(m.data, m.len);
-	            return true;
-	        }
-	    }
-	    return false;
-	}
 
 private:	
 	static constexpr const char* TAG = "LoraTask";
@@ -139,21 +130,23 @@ private:
         while (true) {
 			LoraMessage m;
 	        if (isConfigured && txQueue_ && xQueueReceive(txQueue_, &m, 0) == pdTRUE) {
-				if (waitForAux(500)) {
-			        uint8_t buf[3 + sizeof(m.data)];
-			        buf[0] = (m.addr >> 8) & 0xFF;   // ADDH
-			        buf[1] = m.addr & 0xFF;          // ADDL
-			        buf[2] = channel & 0xFF;         // CHAN 
-			        memcpy(&buf[3], m.data, m.len);
-			        size_t totalLen = m.len + 3;
-			        ESP_LOG_BUFFER_HEX(TAG, buf, totalLen);
-			        uart_write_bytes(LORA_UART_NUM, (const char*)buf, totalLen);
-			        ESP_LOGI(TAG, "LoRa TX done, addr=0x%04X, chan=%ld, len=%zu", m.addr, (long)channel, m.len);
-			    } else {
-					xQueueSendToFront(txQueue_, &m, 0);
-			        ESP_LOGW(TAG, "LoRa not ready for TX");
-			    }
-            } 
+				std::array<uint8_t, 3 + LoraMessage::MAX_LEN> buf{};
+
+			    buf[0] = static_cast<uint8_t>((m.addr >> 8) & 0xFF);  // ADDH
+			    buf[1] = static_cast<uint8_t>(m.addr & 0xFF);         // ADDL
+			    buf[2] = static_cast<uint8_t>(channel & 0xFF);        // CHAN
+			
+			    size_t totalLen = std::min(m.len, m.data.size()) + 3;
+			    memcpy(buf.data() + 3, m.data.data(), std::min(m.len, m.data.size()));
+			    //ESP_LOG_BUFFER_HEX(TAG, buf.data(), totalLen);
+			    uart_write_bytes(LORA_UART_NUM, buf.data(), totalLen);
+			    ESP_LOGI(TAG, "LoRa TX done, addr=0x%04X, chan=%ld, len=%zu",
+             	m.addr, static_cast<long>(channel), m.len);
+			} else if (txQueue_ && m.len > 0){
+				xQueueSendToFront(txQueue_, &m, 0);
+			    ESP_LOGW(TAG, "LoRa not ready for TX");
+			}
+           
             
 			TickType_t now = xTaskGetTickCount();
 			if (!isConfigured || lastSuccessTick == 0 || (now - lastSuccessTick) > pdMS_TO_TICKS(60000)) {                 
@@ -179,28 +172,34 @@ private:
     
     void rxRun() {
 	    ESP_LOGI(TAG, "RX task started");
-	    uint8_t buf[256];
-	
+	    std::array<uint8_t, 256> buf{};
+	    
 	    while (true) {
 			if(isConfigured) {
-		        int len = uart_read_bytes(LORA_UART_NUM, buf, sizeof(buf), 500 / portTICK_PERIOD_MS);
-		        if (len > 0) {
-					for (;;) {
-	                   if (len >= (int)sizeof(buf)) break; 
-	                   	int more = uart_read_bytes(LORA_UART_NUM,
-	                                               buf + len,
-	                                               sizeof(buf) - len,
+		        int len = uart_read_bytes(LORA_UART_NUM,
+                                      buf.data(),
+                                      buf.size(),
+                                      500 / portTICK_PERIOD_MS);
+
+	            if (len > 0) {
+	                for (;;) {
+	                    if (len >= static_cast<int>(buf.size())) break;
+	
+	                    int more = uart_read_bytes(LORA_UART_NUM,
+	                                               buf.data() + len,
+	                                               buf.size() - len,
 	                                               20 / portTICK_PERIOD_MS);
 	                    if (more <= 0) break;
 	                    len += more;
 	                }
-	                ESP_LOG_BUFFER_HEX(TAG, buf, len);
-					lastSuccessTick = xTaskGetTickCount(); 
+	
+	                ESP_LOG_BUFFER_HEX(TAG, buf.data(), len);
+	                lastSuccessTick = xTaskGetTickCount();
 		            LoraMessage m;
-	                m.len = std::min((size_t)(len), sizeof(m.data) - 1);
-	                memcpy(m.data, &buf[0], m.len);
-	                m.data[m.len] = '\0';
-	                ESP_LOGI(TAG, "RX: %s", m.data);
+               		m.len = std::min(static_cast<size_t>(len), m.data.size());
+                	memcpy(m.data.data(), buf.data(), m.len);
+
+                	ESP_LOGI(TAG, "RX: %.*s", static_cast<int>(m.len), m.data.data());
 	                
 		            if (rxQueue_) {
 		                xQueueSend(rxQueue_, &m, 0);

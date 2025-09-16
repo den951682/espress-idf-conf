@@ -21,6 +21,7 @@ idf_component_register(
       joystick_task.cpp
       led_blink_task.cpp
       lora_connection_task.cpp
+      lora_router.cpp
       uptime_task.cpp
       utils.hpp
       send_delayed.cpp

@@ -19,6 +19,7 @@
 #include "joystick_task.cpp"
 #include "led_blink_task.cpp"
 #include "lora_connection_task.cpp"
+#include "lora_router.hpp"
 #include "uptime_task.cpp"
 #include "send_delayed.cpp"
 
@@ -50,6 +51,7 @@ ParameterSync parameterSync(store);
 JoystickTask joystickTask(store);
 LedBlinkTask blinkTask(store, GPIO_NUM_2);
 LoraConnectionTask loraConnectionTask(store);
+LoraRouter loraRouter(loraConnectionTask);
 UptimeTask uptime(store);
 
 static void setupConnection(int fd) {
@@ -58,7 +60,7 @@ static void setupConnection(int fd) {
 		g_conn = nullptr;
 	}
     std::string passPhrase = store.getString(ParameterId::PassPhrase);
-    g_conn = new FdConnection(fd, passPhrase.c_str());
+    g_conn = new FdConnection(fd, &loraRouter, passPhrase.c_str());
     g_conn->setReadyCallback([](){
 		parameterSync.setConnection(g_conn);
         AppCommand* cmd = new AppCommand{AppCommandType::SendAllParameters, {}};
@@ -207,6 +209,7 @@ void appTask(void* arg) {
     }
 }
 
+/*
 extern "C" void lora_test_task(void* arg) {
     auto* lora = static_cast<LoraConnectionTask*>(arg);
 
@@ -222,7 +225,7 @@ extern "C" void lora_test_task(void* arg) {
         vTaskDelay(pdMS_TO_TICKS(10000)); 
     }
 }
-
+*/
 
 extern "C" void app_main(void) {
 	appQueue = xQueueCreate(16, sizeof(AppCommand*));
@@ -235,6 +238,7 @@ extern "C" void app_main(void) {
     loraConnectionTask.start();
     uptime.start();
     
+     /*
      xTaskCreatePinnedToCore(
         lora_test_task,
         "LoraTestTask",
@@ -244,4 +248,5 @@ extern "C" void app_main(void) {
         nullptr,
         tskNO_AFFINITY
     );
+    */
 }	
