@@ -30,15 +30,17 @@ using Value = std::variant<int32_t, float, std::string, bool>;
 using ChangeCallback = std::function<void(uint32_t id, const Value& newValue)>;
 
 enum class ParameterId : uint32_t {
-    PassPhrase       = 0,
-    DeviceName       = 1,
-    LedEnabled       = 2,
-    BlinkCount       = 3,
-    Uptime           = 4,
-    JoystickX        = 5,
-    JoystickY        = 6,
-    ExampleText      = 7,
-    ExampleBool      = 8
+    LoraChannel = 0,
+    LoraAddress = 1,
+    PassPhrase  = 2,
+    DeviceName  = 3,
+    LedEnabled  = 4,
+    BlinkCount  = 5,
+    Uptime      = 6,
+    JoystickX   = 7,
+    JoystickY   = 8,
+    ExampleText = 9,
+    ExampleBool = 10
 };
 
 struct Meta {
@@ -210,6 +212,8 @@ public:
     void setupDefaults() {
 		const std::string &passPhrase = CONFIG_PASSPHRASE;
 		const std::string &deviceName = CONFIG_BT_SERVER_NAME;
+		addIntParam   (ParameterId::LoraChannel, 18, "Канал (частота) Lora", "В Україні дозволено 868МГц (18-19 канал). Freq = 850 MHz + CHAN * 1 MHz", 0, 50, true);
+ 		addIntParam   (ParameterId::LoraAddress, 1, "Адреса Lora", "Для адресованої відправки пакетів (всі модулі мають працювати на одному каналі)", 1, 65535, true);
         addStringParam(ParameterId::PassPhrase, passPhrase, "Pass-фраза", "На її основі генерується симетричний ключ для обміну повідомлень", true);
         addStringParam(ParameterId::DeviceName, deviceName, "Назва Bluetooth пристрою", "Відображається у результатах сканування пристроїв", true);
         addBoolParam  (ParameterId::LedEnabled, true, "LED увімкнено", "Увімкни діод", true);

@@ -219,7 +219,7 @@ extern "C" void lora_test_task(void* arg) {
             ESP_LOGW("LoraTestTask", "Failed to queue message");
         }
 
-        vTaskDelay(pdMS_TO_TICKS(2000)); 
+        vTaskDelay(pdMS_TO_TICKS(10000)); 
     }
 }
 

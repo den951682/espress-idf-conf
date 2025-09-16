@@ -4,6 +4,7 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "parameter_store.cpp"
+#include <inttypes.h>
 
 #define LORA_UART_NUM UART_NUM_1
 #define TXD_PIN GPIO_NUM_17
@@ -15,6 +16,7 @@
 struct LoraMessage {
     char data[64];
     size_t len;
+    uint16_t addr;
 };
 
 class LoraConnectionTask {
@@ -53,6 +55,17 @@ public:
 		txQueue_ = xQueueCreate(10, sizeof(LoraMessage));
         rxQueue_ = xQueueCreate(10, sizeof(LoraMessage));
         
+        store_.onChange(paramstore::ParameterId::LoraChannel, [this](uint32_t id, const paramstore::Value& newValue){
+            channel = std::get<int32_t>(newValue);
+            ESP_LOGI(TAG, "Lora channel changed: %" PRId32, channel);
+            isConfigured = false;
+        });
+        store_.onChange(paramstore::ParameterId::LoraAddress, [this](uint32_t id, const paramstore::Value& newValue){
+            address = std::get<int32_t>(newValue);
+            ESP_LOGI(TAG, "Lora address changed: %" PRId32, address);
+            isConfigured = false;
+        });
+        
         xTaskCreatePinnedToCore(
             &LoraConnectionTask::txTaskEntry,
             name,
@@ -85,12 +98,13 @@ public:
         }
     }
     
-    bool sendMessage(const std::string& text) {
+    bool sendMessage(const std::string& text, uint16_t destAddr = 0xffff) {
         if (txQueue_) {
 			LoraMessage msg;
 			msg.len = std::min(text.size(), sizeof(msg.data) - 1);
 	        memcpy(msg.data, text.c_str(), msg.len);
 	        msg.data[msg.len] = '\0';	
+	        msg.addr = destAddr;
 	        return xQueueSend(txQueue_, &msg, 0) == pdTRUE;
         }
         return false;
@@ -126,8 +140,15 @@ private:
 			LoraMessage m;
 	        if (isConfigured && txQueue_ && xQueueReceive(txQueue_, &m, 0) == pdTRUE) {
 				if (waitForAux(500)) {
-			        uart_write_bytes(LORA_UART_NUM, m.data, m.len);
-			        ESP_LOGW(TAG, "LoRa TX done");
+			        uint8_t buf[3 + sizeof(m.data)];
+			        buf[0] = (m.addr >> 8) & 0xFF;   // ADDH
+			        buf[1] = m.addr & 0xFF;          // ADDL
+			        buf[2] = channel & 0xFF;         // CHAN 
+			        memcpy(&buf[3], m.data, m.len);
+			        size_t totalLen = m.len + 3;
+			        ESP_LOG_BUFFER_HEX(TAG, buf, totalLen);
+			        uart_write_bytes(LORA_UART_NUM, (const char*)buf, totalLen);
+			        ESP_LOGI(TAG, "LoRa TX done, addr=0x%04X, chan=%ld, len=%zu", m.addr, (long)channel, m.len);
 			    } else {
 					xQueueSendToFront(txQueue_, &m, 0);
 			        ESP_LOGW(TAG, "LoRa not ready for TX");
@@ -135,7 +156,7 @@ private:
             } 
             
 			TickType_t now = xTaskGetTickCount();
-			if (lastSuccessTick == 0 || (now - lastSuccessTick) > pdMS_TO_TICKS(60000)) {                 
+			if (!isConfigured || lastSuccessTick == 0 || (now - lastSuccessTick) > pdMS_TO_TICKS(60000)) {                 
 				bool ok = lora_check_connected();
 			    if (ok) {
 				    if (!isConfigured) {
@@ -164,13 +185,23 @@ private:
 			if(isConfigured) {
 		        int len = uart_read_bytes(LORA_UART_NUM, buf, sizeof(buf), 500 / portTICK_PERIOD_MS);
 		        if (len > 0) {
+					for (;;) {
+	                   if (len >= (int)sizeof(buf)) break; 
+	                   	int more = uart_read_bytes(LORA_UART_NUM,
+	                                               buf + len,
+	                                               sizeof(buf) - len,
+	                                               20 / portTICK_PERIOD_MS);
+	                    if (more <= 0) break;
+	                    len += more;
+	                }
+	                ESP_LOG_BUFFER_HEX(TAG, buf, len);
 					lastSuccessTick = xTaskGetTickCount(); 
 		            LoraMessage m;
-		            m.len = std::min((size_t)len, sizeof(m.data) - 1);
-		            memcpy(m.data, buf, m.len);
-		            m.data[m.len] = '\0'; 	
-		            ESP_LOGI(TAG, "RX: %s", m.data);
-		
+	                m.len = std::min((size_t)(len), sizeof(m.data) - 1);
+	                memcpy(m.data, &buf[0], m.len);
+	                m.data[m.len] = '\0';
+	                ESP_LOGI(TAG, "RX: %s", m.data);
+	                
 		            if (rxQueue_) {
 		                xQueueSend(rxQueue_, &m, 0);
 		            }
@@ -183,7 +214,7 @@ private:
     bool lora_check_connected() {
 		if(waitForAux()) {
 			lora_set_mode(true, true);
-		    uint8_t cmd[3] = {0xC1, 0x00, 0x00};
+		    uint8_t cmd[3] = {0xC1, 0x00, 0x07};
 		    uint8_t resp[16];
 		    uart_flush(LORA_UART_NUM);
 		    uart_write_bytes(LORA_UART_NUM, (const char*)cmd, 3);
@@ -192,6 +223,7 @@ private:
 		    lora_set_mode(false, false);
 		    if (len > 0) {
 		        ESP_LOGI(TAG, "Connected got %d bytes from LoRa", len);
+		        ESP_LOG_BUFFER_HEX(TAG, resp, len);
 		        return true;
 		    } else {
 		        ESP_LOGW(TAG, "Not connected No response from LoRa");
@@ -205,17 +237,37 @@ private:
 	
 	bool lora_configure() {
 	    ESP_LOGI(TAG, "Configuring LoRa module...");
-	
+	    lora_set_mode(true, true); 
 	    if (!waitForAux(500)) {
 	        ESP_LOGW(TAG, "Configuration timeout (AUX low too long)");
+	        lora_set_mode(false, false); 
 	        return false;
 	    }
 	
-	    lora_set_mode(true, true); 
+	    uart_set_baudrate(LORA_UART_NUM, 9600);
+	      
+	    uint8_t addh = (address >> 8) & 0xFF;
+	    uint8_t addl = address & 0xFF;
+	    uint8_t chan = channel & 0xFF;
 	
-	    uint8_t cfg[9] = {0xC2, 0x00, 0x01, 0x00, 0x1A, 0x17, 0x44, 0x32, 0x00};
+	    uint8_t cfg[11] = {
+	        0xC0, 
+	        0x00,
+	        0x08,
+	        addh, 
+	        addl, 
+	        0x62,
+	        0x00,
+	        chan,
+	        0x43,
+	        0x00,
+	        0x00
+	    };
+	    ESP_LOGI(TAG, "LoRa configuration");
+	    ESP_LOG_BUFFER_HEX(TAG, cfg, sizeof(cfg));
 	    uart_flush(LORA_UART_NUM);
-	    uart_write_bytes(LORA_UART_NUM, (const char*)cfg, sizeof(cfg));
+	    uart_flush_input(LORA_UART_NUM);
+	    uart_write_bytes(LORA_UART_NUM, cfg, sizeof(cfg));
 	
 	    waitForAux(500);
 	
@@ -226,8 +278,13 @@ private:
 	    if (len > 0) {
 	        ESP_LOGI(TAG, "LoRa response (%d bytes):", len);
 	        ESP_LOG_BUFFER_HEX(TAG, resp, len);
-	        ESP_LOGI(TAG, "LoRa configured");
-	        return true;
+	        if(resp[0]==0xff && resp[1]==0xff && resp[2]==0xff) {
+				ESP_LOGE(TAG, "LoRa not configured: WRONG configuration");
+	        	return false;
+			} else {
+	        	ESP_LOGI(TAG, "LoRa configured");
+	        	return true;
+	        }
 	    } else {
 	        ESP_LOGW(TAG, "No response from LoRa during config");
 	        return false;
@@ -259,4 +316,6 @@ private:
     QueueHandle_t rxQueue_ = nullptr;
     volatile bool isConfigured = false;
     volatile TickType_t lastSuccessTick = 0;
+    int32_t address = 1;
+    int32_t channel = 18;
 };
