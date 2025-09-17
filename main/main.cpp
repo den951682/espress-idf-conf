@@ -39,13 +39,17 @@ struct Data {
 
 struct AppCommand {
     AppCommandType type;
+    int meta;
     std::variant<std::monostate, Data> data;
 };
+
+constexpr int CONN_BLUETOOTH = 0;
+constexpr int CONN_LORA      = 1;
 
 QueueHandle_t appQueue = nullptr;
 SerialLineReader reader;
 BtSppServer bt;
-FdConnection* g_conn = nullptr;
+FdConnection* g_conn[2] = { nullptr, nullptr };
 ParameterStore store;
 ParameterSync parameterSync(store);
 JoystickTask joystickTask(store);
@@ -54,41 +58,41 @@ LoraConnectionTask loraConnectionTask(store);
 LoraRouter loraRouter(loraConnectionTask);
 UptimeTask uptime(store);
 
-static void setupConnection(int readFd, int writeFd) {
-	if (g_conn) {
-		delete g_conn;
-		g_conn = nullptr;
+static void setupConnection(int type, int readFd, int writeFd) {
+	if (g_conn[type]) {
+		delete g_conn[type];
+		g_conn[type] = nullptr;
 	}
     std::string passPhrase = store.getString(ParameterId::PassPhrase);
-    g_conn = new FdConnection(readFd, writeFd, &loraRouter, passPhrase.c_str());
-    g_conn->setReadyCallback([](){
-		parameterSync.setConnection(g_conn);
-        AppCommand* cmd = new AppCommand{AppCommandType::SendAllParameters, {}};
+    g_conn[type] = new FdConnection(readFd, writeFd, &loraRouter, passPhrase.c_str());
+    g_conn[type] -> setReadyCallback([type](){
+		parameterSync.setConnection(type, g_conn[type]);
+        AppCommand* cmd = new AppCommand{AppCommandType::SendAllParameters, type,{}};
         xQueueSend(appQueue, &cmd, 0);
 	});
-    g_conn->setCloseCallback([](){
+    g_conn[type] -> setCloseCallback([type](){
 		ESP_LOGI("APP", "Close Connection callback");
-		parameterSync.removeConnection();
-		AppCommand* cmd = new AppCommand{AppCommandType::CleanupConnection, {}};
+		parameterSync.removeConnection(type);
+		AppCommand* cmd = new AppCommand{AppCommandType::CleanupConnection, type, {}};
         xQueueSend(appQueue, &cmd, 0);
 	});
-	g_conn->setDataCallback([](const uint8_t* data, size_t len){
+	g_conn[type] -> setDataCallback([type](const uint8_t* data, size_t len){
 		 ESP_LOGI("APP", "Data received:");
 		 ESP_LOG_BUFFER_HEX("APP", data, len);
 		 Data d;
          d.bytes.assign(data, data + len);
-         AppCommand* cmd = new AppCommand{AppCommandType::DataReceived, d};
+         AppCommand* cmd = new AppCommand{AppCommandType::DataReceived, type, d};
          xQueueSend(appQueue, &cmd, 0);
     });
         
-    g_conn->setLineCallback([](const std::string& line){
+    g_conn[type] -> setLineCallback([type](const std::string& line){
         ESP_LOGI("APP", "RX line: %s", line.c_str());
-        g_conn->sendLine("OK");
+        g_conn[type] -> sendLine("OK");
     });
     
-    if (g_conn->start() != ESP_OK) { 
+    if (g_conn[type] -> start() != ESP_OK) { 
 		ESP_LOGE("APP", "start failed"); 
-		delete g_conn; g_conn = nullptr;
+		delete g_conn[type]; g_conn[type] = nullptr;
 	}
 }
 
@@ -105,7 +109,7 @@ static void start_bt() {
 
     bt.setOnFdReady([](int fd){
         ESP_LOGI("APP", "FD ready: %d", fd);
-        setupConnection(fd, fd);
+        setupConnection(CONN_BLUETOOTH, fd, fd);
     });
     std::string name = store.getString(paramstore::ParameterId::DeviceName);
     bt.start(name.c_str());
@@ -114,12 +118,13 @@ static void start_bt() {
 static void startReader() {
 	reader.start([](const std::string& line) {
         ESP_LOGI("MAIN", "Got line: %s", line.c_str());
-        if(g_conn != nullptr) g_conn->sendLine(line);
+        if(g_conn[0] != nullptr) g_conn[0] -> sendLine(line);
+        if(g_conn[1] != nullptr) g_conn[1] -> sendLine(line);
     });
 }
 
 
-static void sendMessageToConnection(const char* text) {
+static void sendMessageToConnection(int connType, const char* text) {
 	ESP_LOGI("APP", "Send message %s", text);
 	pModel_Message msg = pModel_Message_init_zero;
     size_t n = std::min(strlen(text), sizeof(msg.text.bytes));
@@ -129,12 +134,12 @@ static void sendMessageToConnection(const char* text) {
     pb_ostream_t ostream = pb_ostream_from_buffer(buffer + 1, sizeof(buffer) - 1);
 	buffer[0] = static_cast<uint8_t>(MessageType::Message);
 	pb_encode(&ostream, pModel_Message_fields, &msg);	
-	if(g_conn) {
-        g_conn -> enqueueSend(buffer, ostream.bytes_written + 1);
+	if(g_conn[connType]) {
+        g_conn[connType] -> enqueueSend(buffer, ostream.bytes_written + 1);
     }
 }
 
-static void handleDataReceivedCommand(std::vector<uint8_t> data) {
+static void handleDataReceivedCommand(int connType, std::vector<uint8_t> data) {
 	if (!data.empty()) {
 		auto type = static_cast<MessageType>(data[0]);                       	        	
 		const uint8_t* payload = data.data() + 1;
@@ -142,15 +147,15 @@ static void handleDataReceivedCommand(std::vector<uint8_t> data) {
     	if(type == MessageType::SetInt || type == MessageType::SetInt ||
     		type == MessageType::SetString || type == MessageType::SetBoolean) {
 			auto paramSetType = static_cast<ParamSetType>(data[0]);
-			bool ok = parameterSync.handleSetParameter(paramSetType, payload, payloadLen, 	[](SetParam setParam){
+			bool ok = parameterSync.handleSetParameter(paramSetType, payload, payloadLen, 	[connType](SetParam setParam){
 					if(setParam == SetParam::Passphrase) {
-						sendMessageToConnection("З'єднання буде закрито. Підключись з новою Pass-фразою. Не забудь її змінити на Android-стороні.");
-					    AppCommand* cmd = new AppCommand{ AppCommandType::RestartConnection, {} };
+						sendMessageToConnection(connType, "З'єднання буде закрито. Підключись з новою Pass-фразою. Не забудь її змінити на Android-стороні.");
+					    AppCommand* cmd = new AppCommand{ AppCommandType::RestartConnection, connType, {} };
                         sendDelayed(appQueue, cmd, 1000);
 					}
 					if(setParam == SetParam::ServerName) {
-						sendMessageToConnection("Сервер буде перезапущено з новою назвою. Перепідключись."); 
-						AppCommand* cmd = new AppCommand{ AppCommandType::RestartServer, {} };
+						sendMessageToConnection(connType, "Сервер буде перезапущено з новою назвою. Перепідключись."); 
+						AppCommand* cmd = new AppCommand{ AppCommandType::RestartServer, connType, {} };
                         sendDelayed(appQueue, cmd, 1000);
 					}
 				});
@@ -171,27 +176,27 @@ void appTask(void* arg) {
         if (xQueueReceive(appQueue, &cmd, portMAX_DELAY) == pdTRUE) {
             switch (cmd -> type) {
 				case AppCommandType::CleanupConnection:
-    				if (g_conn) {
-						g_conn -> stop();
-						delete g_conn;
-						g_conn = nullptr;
+    				if (g_conn[cmd -> meta]) {
+						g_conn[cmd -> meta] -> stop();
+						delete g_conn[cmd -> meta];
+						g_conn[cmd -> meta] = nullptr;
 					}
     				break;
     
 				case AppCommandType::DataReceived:
                 	if (std::holds_alternative<Data>(cmd -> data)) {
-                    	handleDataReceivedCommand(std::get<Data>(cmd -> data).bytes);
+                    	handleDataReceivedCommand(cmd -> meta, std::get<Data>(cmd -> data).bytes);
    					} else {
 						ESP_LOGW("APP", "Wrong  AppCommandType::DataReceived");
 				    }
                 	break;
                               	
                 case AppCommandType::RestartConnection:
-                    g_conn -> stop();
+                    g_conn[cmd -> meta] -> stop();
                 	break;
                 	
                 case AppCommandType::RestartServer:
-                    g_conn -> stop();
+                    g_conn[cmd -> meta] -> stop();
 					bt.stop();
 					start_bt();
                 	break;
@@ -238,8 +243,8 @@ extern "C" void app_main(void) {
     loraConnectionTask.start();
     loraRouter.setOnMessageCallback([](const uint8_t* data, size_t len, int32_t fromAddr) {
 	    ESP_LOGI("App", "Got LoRa packet from %ld, len=%u", (long)fromAddr, (unsigned)len);
-	    if(g_conn) {
-        	g_conn -> enqueueSend(data, len);
+	    if(g_conn[CONN_BLUETOOTH]) {
+        	g_conn[CONN_BLUETOOTH] -> enqueueSend(data, len);
         }
 	});
     uptime.start();

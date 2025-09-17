@@ -115,8 +115,11 @@ public:
             if (!toValueMessage(id, msg)) return;
             pb_encode(&ostream, pModel_BooleanParameter_fields, &msg);
         }
-        if(connection_) {
-          	connection_ -> enqueueSend(buffer, ostream.bytes_written + 1);
+        if(connection_[0]) {
+          	connection_[0] -> enqueueSend(buffer, ostream.bytes_written + 1);
+        }
+        if(connection_[1]) {
+          	connection_[1] -> enqueueSend(buffer, ostream.bytes_written + 1);
         }
     }
  
@@ -140,8 +143,11 @@ public:
         memcpy(out.description.bytes, meta.description.data(), n);
 
 		pb_encode(&ostream, pModel_ParameterInfo_fields, &out);
-		if(connection_) {
-        	connection_ -> enqueueSend(buffer, ostream.bytes_written + 1);
+		if(connection_[0]) {
+        	connection_[0] -> enqueueSend(buffer, ostream.bytes_written + 1);
+        }
+        if(connection_[1]) {
+        	connection_[1] -> enqueueSend(buffer, ostream.bytes_written + 1);
         }
     }
 
@@ -158,19 +164,19 @@ public:
         }
     }
     
-    void setConnection(FdConnection* connection) {
-		connection_ = connection;
+    void setConnection(int connType, FdConnection* connection) {
+		connection_[connType] = connection;
 	}
 	
-	void removeConnection() {
-		connection_ = nullptr;
+	void removeConnection(int connType) {
+		connection_[connType] = nullptr;
 	}
 
 private:
     static constexpr const char* TAG = "ParameterSync";
 
     paramstore::ParameterStore& store_;
-    FdConnection* connection_;
+    FdConnection* connection_[2] = {nullptr, nullptr};
     
     bool toValueMessage(uint32_t id, pModel_IntParameter &msg) const {
         const paramstore::Entry &e = store_.get(id);
