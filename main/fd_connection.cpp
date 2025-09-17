@@ -33,6 +33,14 @@ FdConnection::FdConnection(int fd,
 
 FdConnection::~FdConnection() { 
 	ESP_LOGI(TAG, "Connection destructor");
+	if(_loraAddress.load() > 0) {
+		uint8_t token[3];
+	    token[0] = 0xff;
+	    token[1] = 0xfe;         
+	    token[2] = 0xfd; 
+		loraRouter_ -> routeToLora(_loraAddress, token, 3);
+	} 
+	loraRouter_ -> disableFd(false);
 }
 
 FdConnection::FdConnection(FdConnection&& other) noexcept { moveFrom(other); }
@@ -186,6 +194,7 @@ void FdConnection::taskLoop() {
 					    ESP_LOGI("FdConnection", "Will route to LoRa %d", num);
 					    _loraAddress.store(num); 
 					    accum.erase(accum.begin(), accum.begin() + i + 1);
+					    loraRouter_ -> disableFd(true);
 					 	loraRouter_ -> routeToLora(_loraAddress, accum.data(), accum.size());
 					    continue;
 					}

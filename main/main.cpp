@@ -236,6 +236,12 @@ extern "C" void app_main(void) {
     blinkTask.start();
     joystickTask.start();
     loraConnectionTask.start();
+    loraRouter.setOnMessageCallback([](const uint8_t* data, size_t len, int32_t fromAddr) {
+	    ESP_LOGI("App", "Got LoRa packet from %ld, len=%u", (long)fromAddr, (unsigned)len);
+	    if(g_conn) {
+        	g_conn -> enqueueSend(data, len);
+        }
+	});
     uptime.start();
     
      /*

@@ -17,7 +17,8 @@
 struct LoraMessage {
     static constexpr size_t MAX_LEN = 256;
 
-    uint16_t addr = 0;                       
+    uint16_t dstAddr = 0;      
+    uint16_t srcAddr = 0;                  
     size_t len = 0;                          
     std::array<uint8_t, MAX_LEN> data{};    
 };
@@ -106,11 +107,14 @@ public:
 			LoraMessage msg;
 	        msg.len = std::min(len, msg.data.size());
 	        memcpy(msg.data.data(), data, msg.len);
-	        msg.addr = destAddr;
+	        msg.dstAddr = destAddr;
+	        msg.srcAddr = address;
 	        return xQueueSend(txQueue_, &msg, 0) == pdTRUE;
         }
         return false;
     }
+    
+    QueueHandle_t rxQueue_ = nullptr;
 
 private:	
 	static constexpr const char* TAG = "LoraTask";
@@ -132,16 +136,16 @@ private:
 	        if (isConfigured && txQueue_ && xQueueReceive(txQueue_, &m, 0) == pdTRUE) {
 				std::array<uint8_t, 3 + LoraMessage::MAX_LEN> buf{};
 
-			    buf[0] = static_cast<uint8_t>((m.addr >> 8) & 0xFF);  // ADDH
-			    buf[1] = static_cast<uint8_t>(m.addr & 0xFF);         // ADDL
+			    buf[0] = static_cast<uint8_t>((m.dstAddr >> 8) & 0xFF);  // ADDH
+			    buf[1] = static_cast<uint8_t>(m.dstAddr & 0xFF);         // ADDL
 			    buf[2] = static_cast<uint8_t>(channel & 0xFF);        // CHAN
-			
-			    size_t totalLen = std::min(m.len, m.data.size()) + 3;
-			    memcpy(buf.data() + 3, m.data.data(), std::min(m.len, m.data.size()));
+			    buf[3] = static_cast<uint8_t>((m.srcAddr >> 8) & 0xFF);  // ADDH
+			    buf[4] = static_cast<uint8_t>(m.srcAddr & 0xFF);
+			    size_t totalLen = std::min(m.len, m.data.size()) + 5;
+			    memcpy(buf.data() + 5, m.data.data(), std::min(m.len, m.data.size()));
 			    //ESP_LOG_BUFFER_HEX(TAG, buf.data(), totalLen);
 			    uart_write_bytes(LORA_UART_NUM, buf.data(), totalLen);
-			    ESP_LOGI(TAG, "LoRa TX done, addr=0x%04X, chan=%ld, len=%zu",
-             	m.addr, static_cast<long>(channel), m.len);
+			    ESP_LOGI(TAG, "LoRa TX done, destAddr=0x%04X, srcAddr=0x%04X, chan=%ld, len=%zu", m.dstAddr,  m.srcAddr, static_cast<long>(channel), m.len);
 			} else if (txQueue_ && m.len > 0){
 				xQueueSendToFront(txQueue_, &m, 0);
 			    ESP_LOGW(TAG, "LoRa not ready for TX");
@@ -196,9 +200,13 @@ private:
 	                ESP_LOG_BUFFER_HEX(TAG, buf.data(), len);
 	                lastSuccessTick = xTaskGetTickCount();
 		            LoraMessage m;
-               		m.len = std::min(static_cast<size_t>(len), m.data.size());
-                	memcpy(m.data.data(), buf.data(), m.len);
-
+		            uint8_t addh = buf[0];
+					uint8_t addl = buf[1];
+					m.srcAddr = (static_cast<int32_t>(addh) << 8) | addl;
+					size_t payloadLen = (len > 2) ? static_cast<size_t>(len - 2) : 0;
+					m.len = std::min(payloadLen, m.data.size());
+					memcpy(m.data.data(), buf.data() + 2, m.len);
+               	
                 	ESP_LOGI(TAG, "RX: %.*s", static_cast<int>(m.len), m.data.data());
 	                
 		            if (rxQueue_) {
@@ -312,7 +320,6 @@ private:
     TaskHandle_t txTaskHandle_ = nullptr;
     TaskHandle_t rxTaskHandle_ = nullptr;
     QueueHandle_t txQueue_ = nullptr;
-    QueueHandle_t rxQueue_ = nullptr;
     volatile bool isConfigured = false;
     volatile TickType_t lastSuccessTick = 0;
     int32_t address = 1;
