@@ -26,7 +26,8 @@ public:
     using LineCallback = std::function<void(const std::string&)>;
     using ReadyCallback = std::function<void()>;
     using CloseCallback = std::function<void()>;
-    explicit FdConnection(int fd,	
+    explicit FdConnection(int readFd,
+    						int writeFd,	
     						LoraRouter* loraRouter = nullptr,
     					    const char* passPhrase = nullptr,
                             const char* taskName = "conn_read",
@@ -70,7 +71,8 @@ private:
 
     std::unique_ptr<Protocol> protocol;
     QueueHandle_t sendQueue;
-    std::atomic<int> _fd{-1};
+    std::atomic<int> _readFd{-1};
+    std::atomic<int> _writeFd{-1};
     LoraRouter* loraRouter_;
     const char* _passPhrase;
     const char* _taskName;

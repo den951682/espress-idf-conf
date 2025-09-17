@@ -54,13 +54,13 @@ LoraConnectionTask loraConnectionTask(store);
 LoraRouter loraRouter(loraConnectionTask);
 UptimeTask uptime(store);
 
-static void setupConnection(int fd) {
+static void setupConnection(int readFd, int writeFd) {
 	if (g_conn) {
 		delete g_conn;
 		g_conn = nullptr;
 	}
     std::string passPhrase = store.getString(ParameterId::PassPhrase);
-    g_conn = new FdConnection(fd, &loraRouter, passPhrase.c_str());
+    g_conn = new FdConnection(readFd, writeFd, &loraRouter, passPhrase.c_str());
     g_conn->setReadyCallback([](){
 		parameterSync.setConnection(g_conn);
         AppCommand* cmd = new AppCommand{AppCommandType::SendAllParameters, {}};
@@ -105,7 +105,7 @@ static void start_bt() {
 
     bt.setOnFdReady([](int fd){
         ESP_LOGI("APP", "FD ready: %d", fd);
-        setupConnection(fd);
+        setupConnection(fd, fd);
     });
     std::string name = store.getString(paramstore::ParameterId::DeviceName);
     bt.start(name.c_str());
