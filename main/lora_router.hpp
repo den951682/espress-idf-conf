@@ -25,7 +25,6 @@ public:
 	void disableFd(bool value);
 	
 private:
-	int sockPair_[2]{-1, -1};
 	static void routerTaskEntry(void* arg);
     void routerTaskLoop();
     LoraConnectionTask&  loraConnection_;

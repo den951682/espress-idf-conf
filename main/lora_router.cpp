@@ -56,9 +56,7 @@ void LoraRouter::routerTaskLoop() {
                 ESP_LOG_BUFFER_HEX(TAG, msg.data.data(), msg.len);
                 
                 if (!_fdDisabled.load()) {
-					if(sockPair_[0] == -1) {
-					    
-				    }
+					
 				} else if (onMessage_) {
                     onMessage_(msg.data.data(), msg.len, msg.srcAddr);
                 }

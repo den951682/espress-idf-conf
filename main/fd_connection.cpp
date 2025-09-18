@@ -19,8 +19,7 @@ namespace {
     static const char* TAG = "FdConnection";
 }
 
-FdConnection::FdConnection(int readFd,
-    						   int writeFd,
+FdConnection::FdConnection(DataSource* dataSource,
 							   LoraRouter* loraRouter,
 							   const char* passPhrase,
                                const char* taskName,
@@ -28,7 +27,7 @@ FdConnection::FdConnection(int readFd,
                                UBaseType_t priority,
                                BaseType_t core
                           )
-    : _readFd(readFd), _writeFd(writeFd), loraRouter_(loraRouter), _passPhrase(passPhrase), _taskName(taskName), _stack(stackSize), _prio(priority), _core(core) {
+    : _dataSource(dataSource), loraRouter_(loraRouter), _passPhrase(passPhrase), _taskName(taskName), _stack(stackSize), _prio(priority), _core(core) {
 		ESP_LOGI(TAG, "Connection constructor");
 	}
 
@@ -50,10 +49,6 @@ bool FdConnection::isRunning() const { return _running.load(); }
 
 esp_err_t FdConnection::start() {
 	ESP_LOGI(TAG, "Connection start");
-    if (_readFd.load() < 0 || _writeFd.load() < 0) {
-        ESP_LOGE(TAG, "start(): invalid fd");
-        return ESP_FAIL;
-    }
     if (_running.load()) return ESP_OK;
     _running.store(true);
     _guarded.store(false);
@@ -84,15 +79,10 @@ void FdConnection::stop() {
     if (!_running.exchange(false)) return; 
     ESP_LOGI(TAG, "Connection stop");
     protocol.get() -> close();
-    int readFd = _readFd.exchange(-1);
-    if (readFd >= 0) {
-		ESP_LOGW(TAG, "local stop: closing readFd=%d", readFd);
-        ::close(readFd);
-    }
-    int writeFd = _writeFd.exchange(-1);
-    if (writeFd >= 0) {
-		ESP_LOGW(TAG, "local stop: closing writeFd=%d", writeFd);
-        ::close(writeFd);
+    DataSource* ds = _dataSource.exchange(nullptr);
+    if(ds) {
+	    ds -> close();
+	    delete ds;
     }
 
      if (sendQueue) {
@@ -113,10 +103,10 @@ ssize_t FdConnection::writeAll(const uint8_t* data, size_t len) {
 	//ESP_LOGI(TAG, "Send bytes");
 	//ESP_LOG_BUFFER_HEX(TAG, data, len);
     size_t total = 0;
-    int fd = _writeFd.load();
-    if (fd < 0) return -1;
+    DataSource* ds = _dataSource.load();
+    if (!ds) return -1;
     while (total < len) {
-        ssize_t n = ::write(fd, data + total, len - total);
+        ssize_t n = ds -> write(data + total, len - total);
         if (n > 0) {
             total += static_cast<size_t>(n);
             continue;
@@ -169,15 +159,15 @@ void FdConnection::taskTrampoline(void* arg) {
 }
 
 void FdConnection::taskLoop() {
-    ESP_LOGI(TAG, "read task started (readFd=%d)", _readFd.load());
+    ESP_LOGI(TAG, "read task started");
     std::vector<uint8_t> buf(512);
     std::vector<uint8_t> accum;
     accum.reserve(MAX_ACCUM);
     while (_running.load()) {
-        int fd = _readFd.load();
-        if (fd < 0) break; 
+        DataSource* ds = _dataSource.load();
+        if (!ds) break; 
 
-        ssize_t n = ::read(fd, buf.data(), buf.size());
+        ssize_t n = ds -> read(buf.data(), buf.size());
         if (n > 0) {
 			if(_loraAddress.load() > 0) {
 				loraRouter_ -> routeToLora(_loraAddress, buf.data(), n);
@@ -250,8 +240,11 @@ void FdConnection::taskLoop() {
         ESP_LOGE(TAG, "read() failed: errno=%d (%s)", errno, strerror(errno));
         break;
     }
-    int readFd = _readFd.exchange(-1);
-    if (readFd >= 0) { ::close(readFd); }
+    DataSource* ds = _dataSource.exchange(nullptr);
+    if (ds) { 
+		ds -> close();
+		delete ds;
+	}
     ESP_LOGI(TAG, "read task exit");
     stop();
 }
@@ -286,8 +279,7 @@ FdConnection& FdConnection::operator=(FdConnection&& other) noexcept {
 }
 
 void FdConnection::moveFrom(FdConnection& other) noexcept {
-    _readFd.store(other._readFd.exchange(-1));
-    _writeFd.store(other._writeFd.exchange(-1));
+    _dataSource.store(other._dataSource.exchange(nullptr));
     _passPhrase = other._passPhrase;
     _taskName   = other._taskName;
     _stack      = other._stack;

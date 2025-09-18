@@ -22,6 +22,8 @@
 #include "lora_router.hpp"
 #include "uptime_task.cpp"
 #include "send_delayed.cpp"
+#include "data_source.cpp"
+#include "fd_data_source.cpp"
 
 using namespace paramstore;
 
@@ -58,13 +60,13 @@ LoraConnectionTask loraConnectionTask(store);
 LoraRouter loraRouter(loraConnectionTask);
 UptimeTask uptime(store);
 
-static void setupConnection(int type, int readFd, int writeFd) {
+static void setupConnection(int type, DataSource* ds) {
 	if (g_conn[type]) {
 		delete g_conn[type];
 		g_conn[type] = nullptr;
 	}
     std::string passPhrase = store.getString(ParameterId::PassPhrase);
-    g_conn[type] = new FdConnection(readFd, writeFd, &loraRouter, passPhrase.c_str());
+    g_conn[type] = new FdConnection(ds, &loraRouter, passPhrase.c_str());
     g_conn[type] -> setReadyCallback([type](){
 		parameterSync.setConnection(type, g_conn[type]);
         AppCommand* cmd = new AppCommand{AppCommandType::SendAllParameters, type,{}};
@@ -109,7 +111,8 @@ static void start_bt() {
 
     bt.setOnFdReady([](int fd){
         ESP_LOGI("APP", "FD ready: %d", fd);
-        setupConnection(CONN_BLUETOOTH, fd, fd);
+        DataSource* ds = new FdDataSource(fd);
+        setupConnection(CONN_BLUETOOTH, ds);
     });
     std::string name = store.getString(paramstore::ParameterId::DeviceName);
     bt.start(name.c_str());
