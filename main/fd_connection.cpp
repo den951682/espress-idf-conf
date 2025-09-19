@@ -38,9 +38,11 @@ FdConnection::~FdConnection() {
 	    token[0] = 0xff;
 	    token[1] = 0xfe;         
 	    token[2] = 0xfd; 
+	    ESP_LOGI("FdConnection", "will route line 41");
+                      
 		loraRouter_ -> routeToLora(_loraAddress, token, 3);
 	} 
-	loraRouter_ -> disableFd(false);
+	loraRouter_ -> disableDataSource(false);
 }
 
 FdConnection::FdConnection(FdConnection&& other) noexcept { moveFrom(other); }
@@ -100,8 +102,8 @@ void FdConnection::stop() {
 }
 
 ssize_t FdConnection::writeAll(const uint8_t* data, size_t len) {
-	//ESP_LOGI(TAG, "Send bytes");
-	//ESP_LOG_BUFFER_HEX(TAG, data, len);
+	ESP_LOGI(TAG, "Send bytes");
+	ESP_LOG_BUFFER_HEX(TAG, data, len);
     size_t total = 0;
     DataSource* ds = _dataSource.load();
     if (!ds) return -1;
@@ -170,7 +172,10 @@ void FdConnection::taskLoop() {
         ssize_t n = ds -> read(buf.data(), buf.size());
         if (n > 0) {
 			if(_loraAddress.load() > 0) {
-				loraRouter_ -> routeToLora(_loraAddress, buf.data(), n);
+				ESP_LOGI("FdConnection", "will route line 173");
+                ESP_LOG_BUFFER_HEX("FdConnection", buf.data(),n);
+     			loraRouter_ -> routeToLora(_loraAddress, buf.data(), n);
+				continue;
 			} else if(_guarded) {
 				protocol.get() -> appendReceived(buf.data(), n);
 				continue;
@@ -190,9 +195,11 @@ void FdConnection::taskLoop() {
 					    ESP_LOGI("FdConnection", "Will route to LoRa %d", num);
 					    _loraAddress.store(num); 
 					    accum.erase(accum.begin(), accum.begin() + i + 1);
-					    loraRouter_ -> disableFd(true);
+					    loraRouter_ -> disableDataSource(true);
+					    ESP_LOGI("FdConnection", "will route line 197");
+                        ESP_LOG_BUFFER_HEX("FdConnection", accum.data(), accum.size());
 					 	loraRouter_ -> routeToLora(_loraAddress, accum.data(), accum.size());
-					    continue;
+					    break;
 					}
 
                     if(line.ends_with("guard")) {

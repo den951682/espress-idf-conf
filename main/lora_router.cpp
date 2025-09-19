@@ -1,5 +1,6 @@
 #include "lora_router.hpp"
 #include "esp_log.h"
+#include "lora_data_source.cpp"
 
 static const char* TAG = "LoraRouter";
 
@@ -27,8 +28,10 @@ LoraRouter::~LoraRouter() {
 }
 
 esp_err_t LoraRouter::routeToLora(int32_t loraAddress, const uint8_t* data, size_t len) {
-    ESP_LOGI(TAG, "Routing to LoRa address %ld, length=%u", (long)loraAddress, (unsigned)len);
-    ESP_LOG_BUFFER_HEX("LoraRouter", data, len);
+	if(musSendAddress) {
+		loraConnection_.sendAddress(loraAddress);
+		musSendAddress = false;
+	}
     loraConnection_.sendMessage(data, len, loraAddress);
     return ESP_OK;
 }
@@ -37,8 +40,13 @@ void LoraRouter::setOnMessageCallback(MessageCallback cb) {
     onMessage_ = std::move(cb);
 }
 
-void LoraRouter::disableFd(bool value) {
-    _fdDisabled.store(value);
+void LoraRouter::setOnDataSourceCallback(DataSourceCallback cb) {
+    onDataSource_ = std::move(cb);
+}
+
+void LoraRouter::disableDataSource(bool value) {
+    _dataSourceDisabled.store(value);
+    if (value) musSendAddress = true;
 }
 
 void LoraRouter::routerTaskEntry(void* arg) {
@@ -49,20 +57,26 @@ void LoraRouter::routerTaskEntry(void* arg) {
 void LoraRouter::routerTaskLoop() {
     while (true) {
         if (loraConnection_.rxQueue_ != nullptr) {
-            LoraMessage msg;
-            if (xQueueReceive(loraConnection_.rxQueue_, &msg, portMAX_DELAY) == pdTRUE) {
-                ESP_LOGI(TAG, "Router received message from %ld, len=%u",
-                         (long)msg.srcAddr, (unsigned)msg.len);
-                ESP_LOG_BUFFER_HEX(TAG, msg.data.data(), msg.len);
-                
-                if (!_fdDisabled.load()) {
-					
-				} else if (onMessage_) {
-                    onMessage_(msg.data.data(), msg.len, msg.srcAddr);
-                }
+			if(!_dataSource.load()){
+	            LoraMessage msg;
+	            if (xQueueReceive(loraConnection_.rxQueue_, &msg, portMAX_DELAY) == pdTRUE) {	                
+	                if (!_dataSourceDisabled.load()) {
+						ESP_LOGI(TAG, "Create LoraDataSource");
+						DataSource* ds = _dataSource.load();
+					  	if(!ds)	{
+							uint16_t addr = (static_cast<uint16_t>(msg.data[0]) << 8) |
+                					static_cast<uint16_t>(msg.data[1]);
+                			ESP_LOGI(TAG, "Got srcAddr=0x%04X (%u)", (unsigned)addr, (unsigned)addr);
+			    			ds = new LoraDataSource(loraConnection_, addr); 
+							_dataSource.store(ds);
+							if(onDataSource_) onDataSource_(ds);
+						}
+					} else if (onMessage_) {
+	                    onMessage_(msg.data.data(), msg.len);
+	                }
+	            }
             }
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
+        } 
+		vTaskDelay(pdMS_TO_TICKS(100));
     }
 }

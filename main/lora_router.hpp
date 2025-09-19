@@ -8,12 +8,15 @@
 #include "lora_connection_task.cpp"
 #include "protocol/protocol.hpp"
 #include <memory>
+#include "data_source.cpp"
 #include <sys/socket.h>
 #include <unistd.h>
 
 class LoraRouter {
 public:
-	using MessageCallback = std::function<void(const uint8_t* data, size_t len, int32_t fromAddr)>;
+	using MessageCallback = std::function<void(const uint8_t* data, size_t len)>;
+	
+	using DataSourceCallback = std::function<void(DataSource* ds)>;
 
     explicit LoraRouter(LoraConnectionTask&  loraConnection);
     ~LoraRouter();
@@ -21,8 +24,10 @@ public:
     esp_err_t routeToLora(int32_t loraAddress, const uint8_t* data, size_t len);
     
     void setOnMessageCallback(MessageCallback cb);
+    
+    void setOnDataSourceCallback(DataSourceCallback cb);
 
-	void disableFd(bool value);
+	void disableDataSource(bool value);
 	
 private:
 	static void routerTaskEntry(void* arg);
@@ -30,5 +35,8 @@ private:
     LoraConnectionTask&  loraConnection_;
     TaskHandle_t taskHandle_{nullptr};
     MessageCallback onMessage_;
-    std::atomic<bool> _fdDisabled{false};
+    DataSourceCallback onDataSource_;
+    std::atomic<bool> _dataSourceDisabled{false};
+    std::atomic<DataSource*> _dataSource{nullptr};
+    bool musSendAddress = false;
 };

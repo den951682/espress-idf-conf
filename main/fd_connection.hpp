@@ -57,6 +57,7 @@ public:
     ssize_t sendString(const std::string& s);
     ssize_t sendLine(const std::string& s); 
     void enqueueSend(const uint8_t* data, size_t len);
+    ssize_t writeAll(const uint8_t* data, size_t len);
 
 private:
     static constexpr size_t MAX_ACCUM = 8 * 1024;
@@ -66,7 +67,6 @@ private:
     static void sendTask(void* arg);
     void moveFrom(FdConnection& other) noexcept;
 
-    ssize_t writeAll(const uint8_t* data, size_t len);
     static std::string toHex(const std::vector<uint8_t>& data);
 
     std::unique_ptr<Protocol> protocol;

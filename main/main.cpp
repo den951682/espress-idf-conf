@@ -126,6 +126,17 @@ static void startReader() {
     });
 }
 
+static void setupLoraRouter() {
+	loraRouter.setOnMessageCallback([](const uint8_t* data, size_t len) {
+	    ESP_LOGI("App", "Got LoRa packet len=%u", (unsigned)len);
+	    if(g_conn[CONN_BLUETOOTH]) {
+        	g_conn[CONN_BLUETOOTH] -> writeAll(data, len);
+        }
+	});
+	loraRouter.setOnDataSourceCallback([](DataSource* dataSource) {
+	    setupConnection(CONN_LORA, dataSource);   
+	});
+}
 
 static void sendMessageToConnection(int connType, const char* text) {
 	ESP_LOGI("APP", "Send message %s", text);
@@ -239,18 +250,13 @@ extern "C" void app_main(void) {
 	appQueue = xQueueCreate(16, sizeof(AppCommand*));
     xTaskCreatePinnedToCore(appTask, "appTask", 4096, nullptr, 5, nullptr, tskNO_AFFINITY);
     setupStore();
+    setupLoraRouter();
     start_bt();
     startReader();
     blinkTask.start();
-    joystickTask.start();
+    //joystickTask.start();
     loraConnectionTask.start();
-    loraRouter.setOnMessageCallback([](const uint8_t* data, size_t len, int32_t fromAddr) {
-	    ESP_LOGI("App", "Got LoRa packet from %ld, len=%u", (long)fromAddr, (unsigned)len);
-	    if(g_conn[CONN_BLUETOOTH]) {
-        	g_conn[CONN_BLUETOOTH] -> enqueueSend(data, len);
-        }
-	});
-    uptime.start();
+    //uptime.start();
     
      /*
      xTaskCreatePinnedToCore(
