@@ -58,7 +58,7 @@ private:
         gpio_pullup_en((gpio_num_t)JOY_SW_PIN);
 
         int delay = 200;
-        if(isFast()) delay = 20;
+        //if(isFast()) delay = 20;
         while (true) {
             int rawX = 0, rawY = 0;
             ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL_6, &rawX));

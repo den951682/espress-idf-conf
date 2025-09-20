@@ -54,7 +54,7 @@ public:
 	    uart_param_config(LORA_UART_NUM, &uart_config);
 	    uart_set_pin(LORA_UART_NUM, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
-		txQueue_ = xQueueCreate(16, sizeof(LoraMessage));
+		txQueue_ = xQueueCreate(1, sizeof(LoraMessage));
         rxQueue_ = xQueueCreate(16, sizeof(LoraMessage));
         
         store_.onChange(paramstore::ParameterId::LoraChannel, [this](uint32_t id, const paramstore::Value& newValue){
@@ -108,16 +108,19 @@ public:
 	}
     
     bool sendMessage(const uint8_t* data, size_t len, uint16_t destAddr = 0xffff) {
-		ESP_LOGI("LoraConnection", 
-         "sendMessage called: len=%u, destAddr=0x%04X, srcAddr=0x%04X",
-         (unsigned)len, (unsigned)destAddr, (unsigned)address);
-
-	    if (len > 0 && data) {
-	        ESP_LOG_BUFFER_HEX("LoraConnection", data, len);
-	    } else {
-	        ESP_LOGW("LoraConnection", "sendMessage called with empty data");
-	    }
         if (txQueue_) {
+			if (uxQueueSpacesAvailable(txQueue_) == 0) {
+	        	return false;
+	    	}
+	    	ESP_LOGI("LoraConnection", 
+	         "sendMessage called: len=%u, destAddr=0x%04X, srcAddr=0x%04X",
+	         (unsigned)len, (unsigned)destAddr, (unsigned)address);
+	
+		    if (len > 0 && data) {
+		        ESP_LOG_BUFFER_HEX("LoraConnection", data, len);
+		    } else {
+		        ESP_LOGW("LoraConnection", "sendMessage called with empty data");
+		    }
 			LoraMessage msg;
 	        msg.len = std::min(len, msg.data.size());
 	        memcpy(msg.data.data(), data, msg.len);
@@ -145,7 +148,10 @@ private:
 	void txRun() {
         ESP_LOGI(TAG, "started");
         while (true) {
-			if (!waitForAux(2000)) { continue; }
+			if (!waitForAux(2000)) {
+				 ESP_LOGI(TAG, "LoRa TX in progress");
+				 continue;
+			}
 			LoraMessage m;
 	        if (isConfigured && txQueue_ && xQueueReceive(txQueue_, &m, 0) == pdTRUE) {
 				vTaskDelay(pdMS_TO_TICKS(4)); 
@@ -156,10 +162,14 @@ private:
 			    buf[2] = static_cast<uint8_t>(channel & 0xFF);        // CHAN
 			    size_t totalLen = std::min(m.len, m.data.size()) + 3;
 			    memcpy(buf.data() + 3, m.data.data(), std::min(m.len, m.data.size()));
-			    //ESP_LOG_BUFFER_HEX(TAG, buf.data(), totalLen);
+			    ESP_LOGI(TAG, "LoRa TX started");
+			    ESP_LOG_BUFFER_HEX(TAG, buf.data(), totalLen);
 			    uart_write_bytes(LORA_UART_NUM, buf.data(), totalLen);
-			    ESP_LOGI(TAG, "LoRa TX done, destAddr=0x%04X, chan=%ld, len=%zu", m.dstAddr, static_cast<long>(channel), m.len);
-			    waitForAux(150);
+			    if(waitForAux(250)) {
+			    	ESP_LOGI(TAG, "LoRa TX done, destAddr=0x%04X, chan=%ld, len=%zu", m.dstAddr, static_cast<long>(channel), m.len);
+			    } else {
+					ESP_LOGI(TAG, "LoRa TX in progress, destAddr=0x%04X, chan=%ld, len=%zu", m.dstAddr, static_cast<long>(channel), m.len);
+				};
 			} else if (txQueue_ && m.len > 0){
 				xQueueSendToFront(txQueue_, &m, 0);
 			    ESP_LOGW(TAG, "LoRa not ready for TX");
@@ -184,7 +194,7 @@ private:
 			        isConfigured = false;
 			    }
 			}
-		   	vTaskDelay(pdMS_TO_TICKS(100)); 
+		   	vTaskDelay(pdMS_TO_TICKS(10)); 
 	    }
     }
     
@@ -200,7 +210,6 @@ private:
                                       500 / portTICK_PERIOD_MS);
 
 	            if (len > 0) {
-					/*
 	                for (;;) {
 	                    if (len >= static_cast<int>(buf.size())) break;
 	
@@ -211,16 +220,14 @@ private:
 	                    if (more <= 0) break;
 	                    len += more;
 	                }
-					*/
+	                ESP_LOGI(TAG, "Lora RX: %d bytes", len);
 	                ESP_LOG_BUFFER_HEX(TAG, buf.data(), len);
 	                lastSuccessTick = xTaskGetTickCount();
 		            LoraMessage m;
 		            size_t payloadLen = len;
     				m.len = std::min(payloadLen, m.data.size());
 					memcpy(m.data.data(), buf.data(), m.len);
-               	
-                	ESP_LOGI(TAG, "Lora RX: %.*s", static_cast<int>(m.len), m.data.data());
-	                
+               	 
 		            if (rxQueue_) {
 		                xQueueSend(rxQueue_, &m, 0);
 		            }

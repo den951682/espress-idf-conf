@@ -32,7 +32,9 @@ esp_err_t LoraRouter::routeToLora(int32_t loraAddress, const uint8_t* data, size
 		loraConnection_.sendAddress(loraAddress);
 		musSendAddress = false;
 	}
-    loraConnection_.sendMessage(data, len, loraAddress);
+	while(!loraConnection_.sendMessage(data, len, loraAddress)){
+		vTaskDelay(pdMS_TO_TICKS(5));	
+	};
     return ESP_OK;
 }
 

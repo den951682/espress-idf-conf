@@ -56,7 +56,7 @@ public:
     ssize_t sendBytes(const uint8_t* data, size_t len);
     ssize_t sendString(const std::string& s);
     ssize_t sendLine(const std::string& s); 
-    void enqueueSend(const uint8_t* data, size_t len);
+    bool enqueueSend(const uint8_t* data, size_t len);
     ssize_t writeAll(const uint8_t* data, size_t len);
 
 private:

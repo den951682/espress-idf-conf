@@ -228,45 +228,15 @@ void appTask(void* arg) {
     }
 }
 
-/*
-extern "C" void lora_test_task(void* arg) {
-    auto* lora = static_cast<LoraConnectionTask*>(arg);
-
-    int counter = 0;
-    while (true) {
-        std::string msg = "Msg #" + std::to_string(counter++);
-        if (lora->sendMessage(msg)) {
-            ESP_LOGI("LoraTestTask", "Queued: %s", msg.c_str());
-        } else {
-            ESP_LOGW("LoraTestTask", "Failed to queue message");
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(10000)); 
-    }
-}
-*/
-
 extern "C" void app_main(void) {
 	appQueue = xQueueCreate(16, sizeof(AppCommand*));
-    xTaskCreatePinnedToCore(appTask, "appTask", 4096, nullptr, 5, nullptr, tskNO_AFFINITY);
+    xTaskCreatePinnedToCore(appTask, "CommandTask", 4096, nullptr, 5, nullptr, tskNO_AFFINITY);
     setupStore();
     setupLoraRouter();
     start_bt();
     startReader();
     blinkTask.start();
-    //joystickTask.start();
+    joystickTask.start();
     loraConnectionTask.start();
-    //uptime.start();
-    
-     /*
-     xTaskCreatePinnedToCore(
-        lora_test_task,
-        "LoraTestTask",
-        4096,
-        &loraConnectionTask,
-        4,
-        nullptr,
-        tskNO_AFFINITY
-    );
-    */
+    uptime.start();
 }	

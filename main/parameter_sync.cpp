@@ -4,6 +4,8 @@
 #include "pb_encode.h"
 #include "pb_decode.h"
 #include "message_type.cpp"
+#include <set>
+#include "freertos/semphr.h"
 
 enum class ParamSetType : uint8_t {
     SetInt     = 0x04,
@@ -24,8 +26,9 @@ public:
     ParameterSync(paramstore::ParameterStore& store) : store_(store)
     {
         store_.onAnyChange([this](uint32_t id, const paramstore::Value& val){
-            sendParameterValue(id, val);
+        	enqueueId(id);
         });
+        startTask();
     }
     
     bool handleSetParameter(ParamSetType type, const uint8_t* data, size_t datalen, SetParameterCallback cb) {
@@ -116,10 +119,24 @@ public:
             pb_encode(&ostream, pModel_BooleanParameter_fields, &msg);
         }
         if(connection_[0]) {
-          	connection_[0] -> enqueueSend(buffer, ostream.bytes_written + 1);
+			const paramstore::Entry &e = store_.get(id);
+			while(!(connection_[0] -> enqueueSend(buffer, ostream.bytes_written + 1)) && !e.meta.canLoss){
+				if(resetFlag_) return;
+				vTaskDelay(pdMS_TO_TICKS(5));
+			};
         }
         if(connection_[1]) {
-          	connection_[1] -> enqueueSend(buffer, ostream.bytes_written + 1);
+			const paramstore::Entry &e = store_.get(id);
+			//ESP_LOGI(TAG, "try send value for %u", (unsigned)id);
+			bool sent = false;
+			do {
+			    if (resetFlag_) return;
+			    sent = connection_[1]->enqueueSend(buffer, ostream.bytes_written + 1);
+			    if (!sent/* && !e.meta.canLoss*/) {
+			        vTaskDelay(pdMS_TO_TICKS(5));
+			    }
+			} while (!sent/* && !e.meta.canLoss*/);
+			//ESP_LOGI(TAG, "send info for %u %s", (unsigned)id, sent ? "success" : "failed");
         }
     }
  
@@ -144,24 +161,40 @@ public:
 
 		pb_encode(&ostream, pModel_ParameterInfo_fields, &out);
 		if(connection_[0]) {
-        	connection_[0] -> enqueueSend(buffer, ostream.bytes_written + 1);
+			while(!(connection_[0] -> enqueueSend(buffer, ostream.bytes_written + 1))){
+				if(resetFlag_) return;
+				vTaskDelay(pdMS_TO_TICKS(5));
+			};
         }
         if(connection_[1]) {
-        	connection_[1] -> enqueueSend(buffer, ostream.bytes_written + 1);
+			//ESP_LOGI(TAG, "try send info for %u", (unsigned)id);
+			bool sent = false;
+			while (!sent) {
+			    if (resetFlag_) return;
+			    sent = connection_[1]->enqueueSend(buffer, ostream.bytes_written + 1);
+			    if (!sent) {
+			        vTaskDelay(pdMS_TO_TICKS(5));
+			    }
+			}
+			//ESP_LOGI(TAG, "parameter %u sent successfully", (unsigned)id);
         }
     }
 
     void sendAllParameters() {
         for (auto& meta : store_.listMeta()) {
-            const auto& e = store_.get(meta.id);
-            sendParameterValue(meta.id, e.value);
+            enqueueId(meta.id);
         }
     }
     
     void sendAllParametersInfo() {
-        for (auto& meta : store_.listMeta()) {
-            sendParameterInfo(meta.id, meta);
-        }
+        if (!idQueue_) return;
+        xSemaphoreTake(mutex, portMAX_DELAY);
+        resetFlag_ = true;
+        toSyncIds_.clear();
+        xQueueReset(idQueue_);
+        uint32_t marker = UINT32_MAX;
+        xQueueSend(idQueue_, &marker, 0);
+        xSemaphoreGive(mutex);
     }
     
     void setConnection(int connType, FdConnection* connection) {
@@ -171,12 +204,68 @@ public:
 	void removeConnection(int connType) {
 		connection_[connType] = nullptr;
 	}
+	
+	 void enqueueId(uint32_t id) {
+        if (!idQueue_) return;
+        xSemaphoreTake(mutex, portMAX_DELAY);
+        if (toSyncIds_.count(id) == 0) {
+            if (xQueueSend(idQueue_, &id, 0) == pdTRUE) {
+                toSyncIds_.insert(id);
+            }
+        }
+        xSemaphoreGive(mutex);
+    }
 
 private:
     static constexpr const char* TAG = "ParameterSync";
-
+    SemaphoreHandle_t mutex = xSemaphoreCreateMutex();
     paramstore::ParameterStore& store_;
     FdConnection* connection_[2] = {nullptr, nullptr};
+    
+    TaskHandle_t taskHandle_ = nullptr;
+    std::set<uint32_t> toSyncIds_;
+    QueueHandle_t idQueue_ = nullptr;
+    bool resetFlag_ = false;
+
+	 void startTask(const char* name = "ParameterSyncTask", 
+	                   uint32_t stackSize = 4096, 
+	                   UBaseType_t priority = 5) {
+		//must have size greater params_ in ParamStore
+        idQueue_ = xQueueCreate(32, sizeof(uint32_t));
+        xTaskCreatePinnedToCore(&ParameterSync::taskEntry, name,
+                                stackSize, this, priority, &taskHandle_, 
+                                tskNO_AFFINITY);
+    }
+
+    static void taskEntry(void* arg) {
+        auto* self = static_cast<ParameterSync*>(arg);
+        self -> taskLoop();
+    }
+    
+    void taskLoop() {
+		uint32_t id;
+        while (true) {
+            if (xQueueReceive(idQueue_, &id, portMAX_DELAY) == pdTRUE) {
+				resetFlag_ = false;
+                if (id == UINT32_MAX) {
+                    sendAllParametersInfoInternal();
+                } else {
+                    const auto& e = store_.get(id);
+                    sendParameterValue(id, e.value);
+                }
+                xSemaphoreTake(mutex, portMAX_DELAY);
+                toSyncIds_.erase(id);
+                xSemaphoreGive(mutex);
+            } 
+        }
+        vTaskDelete(nullptr);
+    }
+    
+    void sendAllParametersInfoInternal() {
+        for (auto& meta : store_.listMeta()) {
+            sendParameterInfo(meta.id, meta);
+        }
+    }
     
     bool toValueMessage(uint32_t id, pModel_IntParameter &msg) const {
         const paramstore::Entry &e = store_.get(id);

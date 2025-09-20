@@ -51,6 +51,7 @@ struct Meta {
     float       minValue{0.f};
     float       maxValue{0.f};
     ParamType   type{ParamType::Int};
+    bool        canLoss{false};
 };
 
 struct Entry {
@@ -96,9 +97,10 @@ public:
                      const std::string& descr, 
                      int32_t minV, 
                      int32_t maxV, 
-                     bool editable) {
+                     bool editable,
+                     bool canLoss) {
 		Entry e;
-        e.meta = Meta{ static_cast<uint32_t>(id), name, descr, editable, static_cast<float>(minV), static_cast<float>(maxV), ParamType::Int };
+        e.meta = Meta{ static_cast<uint32_t>(id), name, descr, editable, static_cast<float>(minV), static_cast<float>(maxV), ParamType::Int, canLoss };
         e.value = def;
         params_[static_cast<uint32_t>(id)] = std::move(e);
     }
@@ -109,9 +111,10 @@ public:
                        const std::string& descr,
                        float minV, 
                        float maxV,
-                       bool editable) {
+                       bool editable,
+                       bool canLoss) {
         Entry e;
-        e.meta = Meta{ static_cast<uint32_t>(id), name, descr, editable, minV, maxV, ParamType::Float };
+        e.meta = Meta{ static_cast<uint32_t>(id), name, descr, editable, minV, maxV, ParamType::Float, canLoss};
         e.value = def;
         params_[static_cast<uint32_t>(id)] = std::move(e);
     }
@@ -120,9 +123,10 @@ public:
     					const std::string& def, 
     					const std::string& name,
                         const std::string& descr, 
-                        bool editable) {
+                        bool editable,
+                     	bool canLoss) {
         Entry e;
-        e.meta = Meta{ static_cast<uint32_t>(id), name, descr, editable, 0.f, 0.f, ParamType::String };
+        e.meta = Meta{ static_cast<uint32_t>(id), name, descr, editable, 0.f, 0.f, ParamType::String, canLoss };
         e.value = def;
         params_[static_cast<uint32_t>(id)] = std::move(e);
     }
@@ -131,9 +135,10 @@ public:
     				  bool def, 
     				  const std::string& name,
                       const std::string& descr, 
-                      bool editable) {
+                      bool editable,
+                      bool canLoss) {
         Entry e;
-        e.meta = Meta{ static_cast<uint32_t>(id), name, descr, editable, 0.f, 0.f, ParamType::Bool };
+        e.meta = Meta{ static_cast<uint32_t>(id), name, descr, editable, 0.f, 0.f, ParamType::Bool, canLoss };
         e.value = def;
         params_[static_cast<uint32_t>(id)] = std::move(e);
     }
@@ -212,18 +217,18 @@ public:
     void setupDefaults() {
 		const std::string &passPhrase = CONFIG_PASSPHRASE;
 		const std::string &deviceName = CONFIG_BT_SERVER_NAME;
-		addIntParam   (ParameterId::LoraChannel, 18, "Канал (частота) Lora", "В Україні дозволено 868МГц (18-19 канал). Freq = 850 MHz + CHAN * 1 MHz", 0, 50, true);
- 		addIntParam   (ParameterId::LoraAddress, 1, "Адреса Lora", "Для адресованої відправки пакетів (всі модулі мають працювати на одному каналі)", 1, 65535, true);
-        addStringParam(ParameterId::PassPhrase, passPhrase, "Pass-фраза", "На її основі генерується симетричний ключ для обміну повідомлень", true);
-        addStringParam(ParameterId::DeviceName, deviceName, "Назва Bluetooth пристрою", "Відображається у результатах сканування пристроїв", true);
-        addBoolParam  (ParameterId::LedEnabled, true, "LED увімкнено", "Увімкни діод", true);
-        addIntParam   (ParameterId::BlinkCount, 3, "Кількість мигань", "Кількість послідовних коротких мигань розділених паузою", 1, 9, true);
+		addIntParam   (ParameterId::LoraChannel, 18, "Канал (частота) Lora", "В Україні дозволено 868МГц (18-19 канал). Freq = 850 MHz + CHAN * 1 MHz", 0, 50, true, false);
+ 		addIntParam   (ParameterId::LoraAddress, 1, "Адреса Lora", "Для адресованої відправки пакетів (всі модулі мають працювати на одному каналі)", 1, 65535, true, false);
+        addStringParam(ParameterId::PassPhrase, passPhrase, "Pass-фраза", "На її основі генерується симетричний ключ для обміну повідомлень", true, false);
+        addStringParam(ParameterId::DeviceName, deviceName, "Назва Bluetooth пристрою", "Відображається у результатах сканування пристроїв", true, false);
+        addBoolParam  (ParameterId::LedEnabled, true, "LED увімкнено", "Увімкни діод", true, false);
+        addIntParam   (ParameterId::BlinkCount, 3, "Кількість мигань", "Кількість послідовних коротких мигань розділених паузою", 1, 9, true, false);
 
-        addIntParam   (ParameterId::Uptime, 0, "Час від запуску", "Демонстрація динамічного оновлення параметру", 0, 99999, false);
-        addIntParam   (ParameterId::JoystickX, 2048, "Джойстик X", "Положення джойстика по осі X", 0, 4095, false);
-        addIntParam   (ParameterId::JoystickY, 2048, "Джойстик Y", "Положення джойстика по осі Y", 0, 4095, false);
-        addStringParam(ParameterId::ExampleText, "Значення", "Приклад Текст", "Приклад відображення текстового параметру", false);
-        addBoolParam  (ParameterId::ExampleBool, true, "Приклад Буль", "Приклад відображення булевого параметру", false);
+        addIntParam   (ParameterId::Uptime, 0, "Час від запуску", "Демонстрація динамічного оновлення параметру", 0, 99999, false, true);
+        addIntParam   (ParameterId::JoystickX, 2048, "Джойстик X", "Положення джойстика по осі X", 0, 4095, false, true);
+        addIntParam   (ParameterId::JoystickY, 2048, "Джойстик Y", "Положення джойстика по осі Y", 0, 4095, false, true);
+        addStringParam(ParameterId::ExampleText, "Значення", "Приклад Текст", "Приклад відображення текстового параметру", false, false);
+        addBoolParam  (ParameterId::ExampleBool, true, "Приклад Буль", "Приклад відображення булевого параметру", false, false);
     }
 
 private:

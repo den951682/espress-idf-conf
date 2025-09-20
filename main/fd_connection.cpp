@@ -34,12 +34,11 @@ FdConnection::FdConnection(DataSource* dataSource,
 FdConnection::~FdConnection() { 
 	ESP_LOGI(TAG, "Connection destructor");
 	if(_loraAddress.load() > 0) {
+		ESP_LOGI("FdConnection", "Closed token for lora");
 		uint8_t token[3];
 	    token[0] = 0xff;
 	    token[1] = 0xfe;         
-	    token[2] = 0xfd; 
-	    ESP_LOGI("FdConnection", "will route line 41");
-                      
+	    token[2] = 0xfd;             
 		loraRouter_ -> routeToLora(_loraAddress, token, 3);
 	} 
 	loraRouter_ -> disableDataSource(false);
@@ -57,7 +56,7 @@ esp_err_t FdConnection::start() {
     protocol = /*std::make_unique<EcdhAesProtocol>(_passPhrase);*/createProtocol(_passPhrase);
     ESP_LOGI(TAG, "protocol new=%p", protocol.get());
     protocol.get() -> setReadyCallback([this](){if(_readyCallback) _readyCallback();});
-	sendQueue = xQueueCreate(16, sizeof(SendItem*));
+	sendQueue = xQueueCreate(1, sizeof(SendItem*));
     startSendTask();
     BaseType_t ok = xTaskCreatePinnedToCore(&FdConnection::taskTrampoline,
                                             _taskName,
@@ -102,8 +101,8 @@ void FdConnection::stop() {
 }
 
 ssize_t FdConnection::writeAll(const uint8_t* data, size_t len) {
-	ESP_LOGI(TAG, "Send bytes");
-	ESP_LOG_BUFFER_HEX(TAG, data, len);
+	//ESP_LOGI(TAG, "Send bytes");
+	//ESP_LOG_BUFFER_HEX(TAG, data, len);
     size_t total = 0;
     DataSource* ds = _dataSource.load();
     if (!ds) return -1;
@@ -146,11 +145,20 @@ ssize_t FdConnection::sendLine(const std::string& s) {
     return (b == 1) ? (a + 1) : -1;
 }
 
-void FdConnection::enqueueSend(const uint8_t* data, size_t len) {
+bool FdConnection::enqueueSend(const uint8_t* data, size_t len) {
 	if(_running.load()){
+		if (uxQueueSpacesAvailable(sendQueue) == 0) {
+	        return false;
+	    }
     	auto* item = new SendItem{std::vector<uint8_t>(data, data + len)};
-    	xQueueSend(sendQueue, &item, portMAX_DELAY);
+    	if (xQueueSend(sendQueue, &item, 0) == pdTRUE) {
+            return true;  
+        } else {
+            delete item;  
+            return false;
+        }
     }
+    return false;
 }
 
 void FdConnection::taskTrampoline(void* arg) {
@@ -172,8 +180,8 @@ void FdConnection::taskLoop() {
         ssize_t n = ds -> read(buf.data(), buf.size());
         if (n > 0) {
 			if(_loraAddress.load() > 0) {
-				ESP_LOGI("FdConnection", "will route line 173");
-                ESP_LOG_BUFFER_HEX("FdConnection", buf.data(),n);
+				//ESP_LOGI("FdConnection", "will route line 173");
+                //ESP_LOG_BUFFER_HEX("FdConnection", buf.data(),n);
      			loraRouter_ -> routeToLora(_loraAddress, buf.data(), n);
 				continue;
 			} else if(_guarded) {
@@ -196,8 +204,8 @@ void FdConnection::taskLoop() {
 					    _loraAddress.store(num); 
 					    accum.erase(accum.begin(), accum.begin() + i + 1);
 					    loraRouter_ -> disableDataSource(true);
-					    ESP_LOGI("FdConnection", "will route line 197");
-                        ESP_LOG_BUFFER_HEX("FdConnection", accum.data(), accum.size());
+					    //ESP_LOGI("FdConnection", "will route line 197");
+                        //ESP_LOG_BUFFER_HEX("FdConnection", accum.data(), accum.size());
 					 	loraRouter_ -> routeToLora(_loraAddress, accum.data(), accum.size());
 					    break;
 					}
@@ -268,6 +276,7 @@ void FdConnection::sendTask(void* arg) {
     while (self->_running.load()) {
         if (xQueueReceive(self->sendQueue, &item, portMAX_DELAY) == pdTRUE) {
 			if (!item) break;
+			ESP_LOGI(TAG, "SendTask got item, length=%zu", item->data.size());
 			if(self -> protocol.get() && self -> _running) self->protocol.get()->send(item->data.data(), item->data.size());
             delete item;
         }

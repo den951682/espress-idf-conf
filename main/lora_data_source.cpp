@@ -7,7 +7,9 @@ public:
         : conn_(conn), defaultAddr_(addr) {}
 
     ssize_t write(const uint8_t* data, size_t len) override {
-        conn_.sendMessage(data, len, defaultAddr_);
+        while(!conn_.sendMessage(data, len, defaultAddr_)){
+			vTaskDelay(pdMS_TO_TICKS(5));	
+		};
         return static_cast<ssize_t>(len);
     }
 
@@ -19,8 +21,8 @@ public:
         if (xQueueReceive(conn_.rxQueue_, &msg, 0) == pdTRUE) {
             size_t copyLen = (msg.len < maxLen) ? msg.len : maxLen;
             memcpy(buf, msg.data.data(), copyLen);
-            ESP_LOGI("LoraDataSource", "RX msg: len=%u", (unsigned)msg.len);
-    		ESP_LOG_BUFFER_HEX("LoraDataSource", buf, copyLen);
+            //ESP_LOGI("LoraDataSource", "RX msg: len=%u", (unsigned)msg.len);
+    		//ESP_LOG_BUFFER_HEX("LoraDataSource", buf, copyLen);
             return static_cast<ssize_t>(copyLen);
         }
         return 0; 
