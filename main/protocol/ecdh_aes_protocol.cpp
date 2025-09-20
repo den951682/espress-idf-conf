@@ -7,6 +7,7 @@
 #include "pb_decode.h"
 #include "pb_encode.h"
 #include "proto-model/Handshake.pb.h"
+#include <memory>
 
 static const char* TAG = "EcdhAesProtocol";
 
@@ -20,9 +21,6 @@ void EcdhAesProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
     buffer.clear();
     handshakeReceived = false;
     xSemaphoreTake(sendReady, 0); 
-    //no header
-	uint8_t headerLen = 0;
-	writeCb(&headerLen, 1);
 }
 
 void EcdhAesProtocol::appendReceived(const uint8_t* data, size_t len) {
@@ -60,9 +58,11 @@ bool EcdhAesProtocol::send(const uint8_t* data, size_t len) {
     }
     xSemaphoreGive(sendReady);
     auto encrypted = encryptFrame({data, data + len});
-    uint8_t hdr = encrypted.size();
-    writeCb(&hdr, 1);
-    writeCb(encrypted.data(), encrypted.size());
+	std::vector<uint8_t> buf;
+    buf.reserve(1 + encrypted.size());
+    buf.push_back(static_cast<uint8_t>(encrypted.size()));
+    buf.insert(buf.end(), encrypted.begin(), encrypted.end());
+    writeCb(buf.data(), buf.size());
     return true;
 }
 
@@ -85,8 +85,14 @@ void EcdhAesProtocol::sendHandshake() {
         sendCode(5);
     }  
     uint8_t len = stream.bytes_written;
-    writeCb(&len, 1);
-    writeCb(buffer, len);
+    //no header
+	uint8_t headerLen = 0;
+	std::vector<uint8_t> frame;
+    frame.reserve(2 + len);
+    frame.push_back(headerLen);
+    frame.push_back(len);
+    frame.insert(frame.end(), buffer, buffer + len);
+    writeCb(frame.data(), frame.size());
 }
 
 bool EcdhAesProtocol::parseHandshake(const std::vector<uint8_t>& frame) {

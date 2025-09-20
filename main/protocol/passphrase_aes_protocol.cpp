@@ -27,9 +27,6 @@ void PassphraseAesProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
     buffer.clear();
     handshakeReceived = false;
     xSemaphoreTake(sendReady, 0); 
-    //no header
-	uint8_t headerLen = 0;
-	writeCb(&headerLen, 1);
 }
 
 void PassphraseAesProtocol::appendReceived(const uint8_t* data, size_t len) {
@@ -73,10 +70,12 @@ bool PassphraseAesProtocol::send(const uint8_t* data, size_t len) {
     }
     xSemaphoreGive(sendReady);
     auto encrypted = encryptFrame({data, data + len});
-    uint8_t hdr = encrypted.size();
+    std::vector<uint8_t> buf;
+    buf.reserve(1 + encrypted.size());
+    buf.push_back(static_cast<uint8_t>(encrypted.size()));
+    buf.insert(buf.end(), encrypted.begin(), encrypted.end());
     if(!isClosed.load()) {
-	    writeCb(&hdr, 1);
-	    writeCb(encrypted.data(), encrypted.size());
+    	writeCb(buf.data(), buf.size());
     }
     return true;
 }
@@ -107,9 +106,12 @@ void PassphraseAesProtocol::sendHandshake() {
     size_t total_len = stream.bytes_written;
     std::vector<uint8_t> msg_vec(buffer, buffer + total_len);
     std::vector<uint8_t> enc = crypto.encrypt_data_whole(msg_vec);
-    uint8_t len = enc.size();
-    writeCb(&len, 1);
-    writeCb(enc.data(), len);
+    std::vector<uint8_t> out;
+	out.reserve(2 + enc.size());
+	out.push_back(static_cast<uint8_t>(0));
+	out.push_back(static_cast<uint8_t>(enc.size())); 
+	out.insert(out.end(), enc.begin(), enc.end());  
+	writeCb(out.data(), out.size());
 }
 
 bool PassphraseAesProtocol::parseHandshake(const std::vector<uint8_t>& frame) {

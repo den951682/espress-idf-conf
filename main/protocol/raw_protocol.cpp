@@ -57,9 +57,10 @@ bool RawProtocol::send(const uint8_t* data, size_t len) {
         return false;
     }
     xSemaphoreGive(sendReady);
-    uint8_t hdr = len;
-    writeCb(&hdr, 1);
-    writeCb(data, len);
+    std::vector<uint8_t> buf(1 + len);
+    buf[0] = static_cast<uint8_t>(len);
+    memcpy(buf.data() + 1, data, len);
+    writeCb(buf.data(), buf.size());
     return true;
 }
 
@@ -78,8 +79,10 @@ void RawProtocol::sendHandshake() {
     }  
      
     uint8_t len = static_cast<uint8_t>(stream.bytes_written);
-    writeCb(&len, 1);
-    writeCb(buffer, len);
+    std::vector<uint8_t> buf(1 + len);
+    buf[0] = static_cast<uint8_t>(len);
+    memcpy(buf.data() + 1, buffer, len);
+    writeCb(buf.data(), buf.size());
 }
 
 bool RawProtocol::parseHandshake(const std::vector<uint8_t>& frame) {
