@@ -101,8 +101,8 @@ void FdConnection::stop() {
 }
 
 ssize_t FdConnection::writeAll(const uint8_t* data, size_t len) {
-	//ESP_LOGI(TAG, "Send bytes");
-	//ESP_LOG_BUFFER_HEX(TAG, data, len);
+	ESP_LOGI(TAG, "Send bytes");
+	ESP_LOG_BUFFER_HEX(TAG, data, len);
     size_t total = 0;
     DataSource* ds = _dataSource.load();
     if (!ds) return -1;

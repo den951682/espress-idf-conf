@@ -55,7 +55,7 @@ public:
 	    uart_set_pin(LORA_UART_NUM, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
 		txQueue_ = xQueueCreate(1, sizeof(LoraMessage));
-        rxQueue_ = xQueueCreate(16, sizeof(LoraMessage));
+        rxQueue_ = xQueueCreate(1, sizeof(LoraMessage));
         
         store_.onChange(paramstore::ParameterId::LoraChannel, [this](uint32_t id, const paramstore::Value& newValue){
             channel = std::get<int32_t>(newValue);
@@ -207,9 +207,10 @@ private:
 		        int len = uart_read_bytes(LORA_UART_NUM,
                                       buf.data(),
                                       buf.size(),
-                                      500 / portTICK_PERIOD_MS);
+                                      50 / portTICK_PERIOD_MS);
 
 	            if (len > 0) {
+					/*
 	                for (;;) {
 	                    if (len >= static_cast<int>(buf.size())) break;
 	
@@ -220,6 +221,7 @@ private:
 	                    if (more <= 0) break;
 	                    len += more;
 	                }
+	                */
 	                ESP_LOGI(TAG, "Lora RX: %d bytes", len);
 	                ESP_LOG_BUFFER_HEX(TAG, buf.data(), len);
 	                lastSuccessTick = xTaskGetTickCount();

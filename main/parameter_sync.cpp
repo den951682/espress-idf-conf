@@ -203,6 +203,7 @@ public:
 	
 	void removeConnection(int connType) {
 		connection_[connType] = nullptr;
+		resetFlag_ = true;
 	}
 	
 	 void enqueueId(uint32_t id) {

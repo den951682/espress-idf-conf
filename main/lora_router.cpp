@@ -72,6 +72,20 @@ void LoraRouter::routerTaskLoop() {
 			    			ds = new LoraDataSource(loraConnection_, addr); 
 							_dataSource.store(ds);
 							if(onDataSource_) onDataSource_(ds);
+							if (msg.len > 2) {
+					            LoraMessage newMsg;
+					            newMsg.len = msg.len - 2;
+					            memcpy(newMsg.data.data(), msg.data.data() + 2, newMsg.len);
+					            newMsg.dstAddr = msg.dstAddr;
+					     
+					            if (loraConnection_.rxQueue_) {
+					                if (xQueueSendToFront(loraConnection_.rxQueue_, &newMsg, 0) != pdTRUE) {
+					                    ESP_LOGW(TAG, "Failed to push message back to queue");
+					                } else {
+					                    ESP_LOGI(TAG, "Message pushed to front of queue, len=%u", newMsg.len);
+					                }
+					            }
+					        }
 						}
 					} else if (onMessage_) {
 	                    onMessage_(msg.data.data(), msg.len);

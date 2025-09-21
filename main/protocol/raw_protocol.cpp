@@ -20,12 +20,13 @@ void RawProtocol::init(WriteCallback writeCb, QueueCallback recvCb) {
     buffer.clear();
     handshakeReceived = false;
     xSemaphoreTake(sendReady, 0); 
-    //no header
-	uint8_t headerLen = 0;
-	writeCb(&headerLen, 1);
 }
 
 void RawProtocol::appendReceived(const uint8_t* data, size_t len) {
+	ESP_LOGI("RawProtocol", "appendReceived called: len=%u", (unsigned)len);
+    if (len > 0 && data) {
+        ESP_LOG_BUFFER_HEX("RawProtocol", data, len);
+    }
     buffer.insert(buffer.end(), data, data + len);
     while (true) {
         if (buffer.empty()) return;
@@ -57,10 +58,11 @@ bool RawProtocol::send(const uint8_t* data, size_t len) {
         return false;
     }
     xSemaphoreGive(sendReady);
-    std::vector<uint8_t> buf(1 + len);
-    buf[0] = static_cast<uint8_t>(len);
-    memcpy(buf.data() + 1, data, len);
-    writeCb(buf.data(), buf.size());
+    std::vector<uint8_t> frame;
+    frame.reserve(1 + len);
+    frame.push_back(static_cast<uint8_t>(len));
+    frame.insert(frame.end(), data, data + len);
+    writeCb(frame.data(), frame.size());
     return true;
 }
 
@@ -78,11 +80,15 @@ void RawProtocol::sendHandshake() {
         ESP_LOGE(TAG, "Handshake encode failed: %s", PB_GET_ERROR(&stream));
     }  
      
-    uint8_t len = static_cast<uint8_t>(stream.bytes_written);
-    std::vector<uint8_t> buf(1 + len);
-    buf[0] = static_cast<uint8_t>(len);
-    memcpy(buf.data() + 1, buffer, len);
-    writeCb(buf.data(), buf.size());
+    uint8_t len = stream.bytes_written;
+    //no header
+	uint8_t headerLen = 0;
+	std::vector<uint8_t> frame;
+    frame.reserve(2 + len);
+    frame.push_back(headerLen);
+    frame.push_back(len);
+    frame.insert(frame.end(), buffer, buffer + len);
+    writeCb(frame.data(), frame.size());
 }
 
 bool RawProtocol::parseHandshake(const std::vector<uint8_t>& frame) {
