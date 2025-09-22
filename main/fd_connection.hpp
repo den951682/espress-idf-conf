@@ -58,6 +58,7 @@ public:
     ssize_t sendLine(const std::string& s); 
     bool enqueueSend(const uint8_t* data, size_t len);
     ssize_t writeAll(const uint8_t* data, size_t len);
+    bool isReady();
 
 private:
     static constexpr size_t MAX_ACCUM = 8 * 1024;

@@ -124,6 +124,15 @@ ssize_t FdConnection::writeAll(const uint8_t* data, size_t len) {
     return static_cast<ssize_t>(total);
 }
 
+bool FdConnection::isReady() {
+	DataSource* ds= _dataSource.load();
+	if(ds){
+		return ds -> isReady();
+	} else {
+		return false;
+	}
+}
+
 ssize_t FdConnection::sendBytes(const uint8_t* data, size_t len) {
     if (!data || len == 0) return 0;
     std::lock_guard<std::mutex> lock(_writeMtx);

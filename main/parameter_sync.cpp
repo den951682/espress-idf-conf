@@ -173,7 +173,7 @@ public:
 			    if (resetFlag_) return;
 			    sent = connection_[1]->enqueueSend(buffer, ostream.bytes_written + 1);
 			    if (!sent) {
-			        vTaskDelay(pdMS_TO_TICKS(5));
+			        vTaskDelay(pdMS_TO_TICKS(20));
 			    }
 			}
 			//ESP_LOGI(TAG, "parameter %u sent successfully", (unsigned)id);
@@ -247,6 +247,21 @@ private:
 		uint32_t id;
         while (true) {
             if (xQueueReceive(idQueue_, &id, portMAX_DELAY) == pdTRUE) {
+				if(!connection_[0] && !connection_[1]) {
+					xQueueSendToFront(idQueue_, &id, 0);
+					vTaskDelay(pdMS_TO_TICKS(20));
+					continue;
+				}
+				if(connection_[0] && !(connection_[0] ->isReady())) {
+					xQueueSendToFront(idQueue_, &id, 0);
+					vTaskDelay(pdMS_TO_TICKS(20));
+					continue;
+				}
+				if(connection_[1] && !(connection_[1] ->isReady())) {
+					xQueueSendToFront(idQueue_, &id, 0);
+					vTaskDelay(pdMS_TO_TICKS(20));
+					continue;
+				}
 				resetFlag_ = false;
                 if (id == UINT32_MAX) {
                     sendAllParametersInfoInternal();

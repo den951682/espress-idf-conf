@@ -130,7 +130,12 @@ public:
         return false;
     }
     
+     bool isReady() {
+	    return gpio_get_level(LORA_AUX_GPIO) == 1;
+	 }
+
     QueueHandle_t rxQueue_ = nullptr;
+    
 
 private:	
 	static constexpr const char* TAG = "LoraTask";
@@ -150,6 +155,7 @@ private:
         while (true) {
 			if (!waitForAux(2000)) {
 				 ESP_LOGI(TAG, "LoRa TX in progress");
+				 vTaskDelay(pdMS_TO_TICKS(20)); 
 				 continue;
 			}
 			LoraMessage m;
@@ -194,7 +200,7 @@ private:
 			        isConfigured = false;
 			    }
 			}
-		   	vTaskDelay(pdMS_TO_TICKS(10)); 
+		   	vTaskDelay(pdMS_TO_TICKS(20)); 
 	    }
     }
     
@@ -207,7 +213,7 @@ private:
 		        int len = uart_read_bytes(LORA_UART_NUM,
                                       buf.data(),
                                       buf.size(),
-                                      50 / portTICK_PERIOD_MS);
+                                      33 / portTICK_PERIOD_MS);
 
 	            if (len > 0) {
 					/*
@@ -284,7 +290,7 @@ private:
 	        0x08,
 	        addh, 
 	        addl, 
-	        0x62,
+	        0x67, //0x62 2400bps,
 	        0x00,
 	        chan,
 	        0x43,
@@ -332,7 +338,7 @@ private:
 	        if (gpio_get_level(LORA_AUX_GPIO) == 1) {
 	            return true; 
 	        }
-	        vTaskDelay(pdMS_TO_TICKS(5)); 
+	        vTaskDelay(pdMS_TO_TICKS(20)); 
 	    }
 	    return false;
 	}

@@ -11,4 +11,6 @@ public:
     virtual ssize_t read(uint8_t* buf, size_t maxLen) = 0;
     
     virtual void close() = 0;
+    
+    virtual bool isReady() = 0;
 };

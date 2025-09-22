@@ -30,6 +30,10 @@ public:
         	::close(fd_);
 		}
 	}
+	
+	bool isReady() override{
+		return true;
+	}
 
 private:
     int fd_;

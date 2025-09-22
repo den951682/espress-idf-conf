@@ -31,6 +31,10 @@ public:
     void close() override {
 		
 	}
+	
+	bool isReady() override {
+		return conn_.isReady();
+	}
 
 private:
     LoraConnectionTask& conn_;
