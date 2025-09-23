@@ -2,6 +2,8 @@
 #include <cstddef>
 #include <cstdint>
 
+using DsTxDoneCallback = std::function<void()>;
+
 class DataSource {
 public:
     virtual ~DataSource() = default;
@@ -13,4 +15,9 @@ public:
     virtual void close() = 0;
     
     virtual bool isReady() = 0;
+    
+    void setTxDoneCallback(DsTxDoneCallback cb) { _txDoneCB = std::move(cb); }
+    
+protected:
+	DsTxDoneCallback _txDoneCB;
 };

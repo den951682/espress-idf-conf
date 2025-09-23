@@ -21,6 +21,8 @@ struct LoraMessage {
     std::array<uint8_t, MAX_LEN> data{};    
 };
 
+using TxDoneCallback = std::function<void()>;
+
 class LoraConnectionTask {
 public:
 	LoraConnectionTask(paramstore::ParameterStore& store)
@@ -109,18 +111,21 @@ public:
     
     bool sendMessage(const uint8_t* data, size_t len, uint16_t destAddr = 0xffff) {
         if (txQueue_) {
-			if (uxQueueSpacesAvailable(txQueue_) == 0) {
+			if (uxQueueSpacesAvailable(txQueue_) == 0) {	
+	    		//ESP_LOGI("LoraConnection", "sendMessage queue is full");
 	        	return false;
 	    	}
+	    	/*
 	    	ESP_LOGI("LoraConnection", 
 	         "sendMessage called: len=%u, destAddr=0x%04X, srcAddr=0x%04X",
 	         (unsigned)len, (unsigned)destAddr, (unsigned)address);
-	
+	        
 		    if (len > 0 && data) {
 		        ESP_LOG_BUFFER_HEX("LoraConnection", data, len);
 		    } else {
 		        ESP_LOGW("LoraConnection", "sendMessage called with empty data");
 		    }
+		    */
 			LoraMessage msg;
 	        msg.len = std::min(len, msg.data.size());
 	        memcpy(msg.data.data(), data, msg.len);
@@ -133,10 +138,11 @@ public:
      bool isReady() {
 	    return gpio_get_level(LORA_AUX_GPIO) == 1;
 	 }
+	 
+	 void setTxDoneCallback(TxDoneCallback cb) { _txDoneCB = std::move(cb); }
 
-    QueueHandle_t rxQueue_ = nullptr;
+   	 QueueHandle_t rxQueue_ = nullptr;
     
-
 private:	
 	static constexpr const char* TAG = "LoraTask";
 
@@ -176,6 +182,9 @@ private:
 			    } else {
 					ESP_LOGI(TAG, "LoRa TX in progress, destAddr=0x%04X, chan=%ld, len=%zu", m.dstAddr, static_cast<long>(channel), m.len);
 				};
+				if(_txDoneCB && waitForAux(2000) && uxQueueSpacesAvailable(txQueue_) > 0) {
+					_txDoneCB();
+				}
 			} else if (txQueue_ && m.len > 0){
 				xQueueSendToFront(txQueue_, &m, 0);
 			    ESP_LOGW(TAG, "LoRa not ready for TX");
@@ -216,7 +225,6 @@ private:
                                       33 / portTICK_PERIOD_MS);
 
 	            if (len > 0) {
-					/*
 	                for (;;) {
 	                    if (len >= static_cast<int>(buf.size())) break;
 	
@@ -227,7 +235,7 @@ private:
 	                    if (more <= 0) break;
 	                    len += more;
 	                }
-	                */
+	                
 	                ESP_LOGI(TAG, "Lora RX: %d bytes", len);
 	                ESP_LOG_BUFFER_HEX(TAG, buf.data(), len);
 	                lastSuccessTick = xTaskGetTickCount();
@@ -237,7 +245,7 @@ private:
 					memcpy(m.data.data(), buf.data(), m.len);
                	 
 		            if (rxQueue_) {
-		                xQueueSend(rxQueue_, &m, 0);
+		                xQueueSend(rxQueue_, &m, portMAX_DELAY);
 		            }
 		        }
 	        }
@@ -351,4 +359,5 @@ private:
     volatile TickType_t lastSuccessTick = 0;
     int32_t address = 1;
     int32_t channel = 18;
+    TxDoneCallback _txDoneCB;
 };

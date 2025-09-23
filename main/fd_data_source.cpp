@@ -13,6 +13,9 @@ public:
         if (ret < 0) {
             ESP_LOGE("FdDataSource", "write error: %s", strerror(errno));
         }
+        if(_txDoneCB) {
+			_txDoneCB();
+		}
         return ret;
     }
 

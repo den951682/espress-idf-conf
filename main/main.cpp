@@ -216,8 +216,7 @@ void appTask(void* arg) {
                 	break;
                 	
                 case AppCommandType::SendAllParameters:
-                    parameterSync.sendAllParametersInfo();
-                    parameterSync.sendAllParameters();
+                    parameterSync.sendAllParametersInfo(cmd -> meta);
                     break;
 
                 default:

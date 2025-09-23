@@ -4,7 +4,13 @@
 class LoraDataSource : public DataSource {
 public:
     explicit LoraDataSource(LoraConnectionTask& conn, uint16_t addr)
-        : conn_(conn), defaultAddr_(addr) {}
+        : conn_(conn), defaultAddr_(addr) {
+			conn_.setTxDoneCallback([this](){
+		        if(_txDoneCB) {
+					_txDoneCB();
+				}
+		    });
+		}
 
     ssize_t write(const uint8_t* data, size_t len) override {
         while(!conn_.sendMessage(data, len, defaultAddr_)){

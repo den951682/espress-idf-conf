@@ -29,6 +29,13 @@ FdConnection::FdConnection(DataSource* dataSource,
                           )
     : _dataSource(dataSource), loraRouter_(loraRouter), _passPhrase(passPhrase), _taskName(taskName), _stack(stackSize), _prio(priority), _core(core) {
 		ESP_LOGI(TAG, "Connection constructor");
+		if(dataSource) {
+			dataSource -> setTxDoneCallback([this](){
+			    if(_txDoneCB) {
+	       		 	_txDoneCB();
+				}
+    		}		
+		);}
 	}
 
 FdConnection::~FdConnection() { 
@@ -101,8 +108,8 @@ void FdConnection::stop() {
 }
 
 ssize_t FdConnection::writeAll(const uint8_t* data, size_t len) {
-	ESP_LOGI(TAG, "Send bytes");
-	ESP_LOG_BUFFER_HEX(TAG, data, len);
+	//ESP_LOGI(TAG, "writeAll %u", (unsigned) len);
+	//ESP_LOG_BUFFER_HEX(TAG, data, len);
     size_t total = 0;
     DataSource* ds = _dataSource.load();
     if (!ds) return -1;
@@ -157,12 +164,15 @@ ssize_t FdConnection::sendLine(const std::string& s) {
 bool FdConnection::enqueueSend(const uint8_t* data, size_t len) {
 	if(_running.load()){
 		if (uxQueueSpacesAvailable(sendQueue) == 0) {
+			//ESP_LOGI(TAG, "enqueueSend queue is full");
 	        return false;
 	    }
     	auto* item = new SendItem{std::vector<uint8_t>(data, data + len)};
     	if (xQueueSend(sendQueue, &item, 0) == pdTRUE) {
+			//ESP_LOGI(TAG, "enqueueSend success %u bytes", (unsigned) len);
             return true;  
         } else {
+			ESP_LOGI(TAG, "enqueueSend can`t insert into queue");
             delete item;  
             return false;
         }

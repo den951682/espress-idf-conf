@@ -20,6 +20,7 @@ struct SendItem {
     std::vector<uint8_t> data;
 };
 
+using ConnTxDoneCallback = std::function<void()>;
 
 class FdConnection {
 public:
@@ -47,6 +48,7 @@ public:
     void setLineCallback(LineCallback cb) { _onLine = std::move(cb); }
     void setReadyCallback(ReadyCallback cb) { _readyCallback = std::move(cb); }
     void setCloseCallback(CloseCallback cb) { _closeCB = std::move(cb); }
+    void setTxDoneCallback(ConnTxDoneCallback cb) { _txDoneCB = std::move(cb); }
     bool isRunning() const;
 
     esp_err_t start();
@@ -92,4 +94,5 @@ private:
     LineCallback _onLine;
     ReadyCallback _readyCallback;
     CloseCallback _closeCB;
+    ConnTxDoneCallback _txDoneCB;
 };
