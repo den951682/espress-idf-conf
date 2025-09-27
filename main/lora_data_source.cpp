@@ -12,8 +12,8 @@ public:
 		    });
 		}
 
-    ssize_t write(const uint8_t* data, size_t len) override {
-        while(!conn_.sendMessage(data, len, defaultAddr_)){
+    ssize_t write(bool withAck, const uint8_t* data, size_t len) override {
+        while(!conn_.sendMessage(withAck, data, len, defaultAddr_)){
 			vTaskDelay(pdMS_TO_TICKS(5));	
 		};
         return static_cast<ssize_t>(len);
@@ -40,6 +40,10 @@ public:
 	
 	bool isReady() override {
 		return conn_.isReady();
+	}
+	
+	uint32_t estimateTxTimeMs(size_t payloadLen) override {
+		return conn_.estimateTxTimeMs(payloadLen);
 	}
 
 private:

@@ -32,7 +32,7 @@ esp_err_t LoraRouter::routeToLora(int32_t loraAddress, const uint8_t* data, size
 		loraConnection_.sendAddress(loraAddress);
 		musSendAddress = false;
 	}
-	while(!loraConnection_.sendMessage(data, len, loraAddress)){
+	while(!loraConnection_.sendMessage(true, data, len, loraAddress)){
 		vTaskDelay(pdMS_TO_TICKS(5));	
 	};
     return ESP_OK;
@@ -66,18 +66,27 @@ void LoraRouter::routerTaskLoop() {
 						ESP_LOGI(TAG, "Create LoraDataSource");
 						DataSource* ds = _dataSource.load();
 					  	if(!ds)	{
+							ESP_LOGI("Lora router", "Lora router create DS");
+	                		ESP_LOG_BUFFER_HEX("Lora router", msg.data.data(), static_cast<uint16_t>(msg.len));
 							uint16_t addr = (static_cast<uint16_t>(msg.data[0]) << 8) |
                 					static_cast<uint16_t>(msg.data[1]);
+                			loraConnection_.addressForAck = addr;
                 			ESP_LOGI(TAG, "Got srcAddr=0x%04X (%u)", (unsigned)addr, (unsigned)addr);
 			    			ds = new LoraDataSource(loraConnection_, addr); 
 							_dataSource.store(ds);
 							if(onDataSource_) onDataSource_(ds);
+							LoraMessage ack;
+					   		ack.type = 0x02;
+					    	ack.msgId = 0;
+					        ack.dstAddr = addr;
+					        ack.len = 0;
+					    	xQueueSend(loraConnection_.txQueue_, &ack, portMAX_DELAY); 
 							if (msg.len > 2) {
 					            LoraMessage newMsg;
 					            newMsg.len = msg.len - 2;
 					            memcpy(newMsg.data.data(), msg.data.data() + 2, newMsg.len);
 					            newMsg.dstAddr = msg.dstAddr;
-					     
+					            
 					            if (loraConnection_.rxQueue_) {
 					                if (xQueueSendToFront(loraConnection_.rxQueue_, &newMsg, 0) != pdTRUE) {
 					                    ESP_LOGW(TAG, "Failed to push message back to queue");

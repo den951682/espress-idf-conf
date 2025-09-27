@@ -6,6 +6,8 @@
 #include "esp_log.h"
 #include "parameter_store.cpp"
 #include <inttypes.h>
+#include <cstdint>
+#include <bitset>
 
 #define LORA_UART_NUM UART_NUM_1
 #define TXD_PIN GPIO_NUM_17
@@ -16,9 +18,11 @@
 
 struct LoraMessage {
     static constexpr size_t MAX_LEN = 256;
-    uint16_t dstAddr = 0;                        
-    size_t len = 0;                          
-    std::array<uint8_t, MAX_LEN> data{};    
+    uint8_t type = 0x01;               
+    uint8_t msgId = 0;                
+    uint16_t dstAddr = 0;
+    size_t len = 0;
+    std::array<uint8_t, MAX_LEN> data{};
 };
 
 using TxDoneCallback = std::function<void()>;
@@ -58,6 +62,8 @@ public:
 
 		txQueue_ = xQueueCreate(1, sizeof(LoraMessage));
         rxQueue_ = xQueueCreate(1, sizeof(LoraMessage));
+        ackToSendQueue_ = xQueueCreate(1, sizeof(LoraMessage));
+        ackQueue_ = xQueueCreate(1, sizeof(uint8_t));
         
         store_.onChange(paramstore::ParameterId::LoraChannel, [this](uint32_t id, const paramstore::Value& newValue){
             channel = std::get<int32_t>(newValue);
@@ -89,6 +95,16 @@ public:
             &rxTaskHandle_,
             tskNO_AFFINITY
         );
+        
+        xTaskCreatePinnedToCore(
+            &LoraConnectionTask::ackToSendTaskEntry,
+            "LoraAckToSendTask",
+            4096,
+            this,
+            priority,
+            &ackToSendTaskHandle_,
+            tskNO_AFFINITY
+        );
     }
 
     void stop() {
@@ -100,16 +116,21 @@ public:
             vTaskDelete(rxTaskHandle_);
             rxTaskHandle_ = nullptr;
         }
+        if (ackToSendTaskHandle_) {
+            vTaskDelete(ackToSendTaskHandle_);
+            ackToSendTaskHandle_ = nullptr;
+        }
     }
     
     void sendAddress(uint16_t destAddr = 0xffff) {
 	    uint8_t buf[2];
 	    buf[0] = static_cast<uint8_t>((address >> 8) & 0xFF);  
-	    buf[1] = static_cast<uint8_t>(address & 0xFF);  
-	    sendMessage(buf, sizeof(buf), destAddr);
+	    buf[1] = static_cast<uint8_t>(address & 0xFF); 
+	    addressForAck = destAddr; 
+	    sendMessage(true, buf, sizeof(buf), destAddr);
 	}
     
-    bool sendMessage(const uint8_t* data, size_t len, uint16_t destAddr = 0xffff) {
+    bool sendMessage(bool withAck, const uint8_t* data, size_t len, uint16_t destAddr = 0xffff) {
         if (txQueue_) {
 			if (uxQueueSpacesAvailable(txQueue_) == 0) {	
 	    		//ESP_LOGI("LoraConnection", "sendMessage queue is full");
@@ -127,6 +148,9 @@ public:
 		    }
 		    */
 			LoraMessage msg;
+			msg.type = 0x00;
+			if(withAck) msg.type = 0x01; 
+			msg.msgId = nextMsgId_++;
 	        msg.len = std::min(len, msg.data.size());
 	        memcpy(msg.data.data(), data, msg.len);
 	        msg.dstAddr = destAddr;
@@ -139,11 +163,30 @@ public:
 	    return gpio_get_level(LORA_AUX_GPIO) == 1;
 	 }
 	 
+	 uint32_t estimateTxTimeMs(size_t payloadLen) {
+        int airRateIndex = reg5 & 0b111;
+        int airRate = airRateTable[airRateIndex];
+        size_t totalLen = payloadLen + 6;
+        uint32_t durationMs = static_cast<uint32_t>((totalLen * 8.0f / airRate) * 1000.0f);
+        /*ESP_LOGI(TAG, "Payload=%" PRIu32 " bytes, Total=%" PRIu32 " bytes, AirRate=%d bps, Time=%" PRIu32 " ms",
+             static_cast<uint32_t>(payloadLen),
+             static_cast<uint32_t>(totalLen),
+             airRate,
+             durationMs); */    
+        return durationMs;
+    }
+	 
 	 void setTxDoneCallback(TxDoneCallback cb) { _txDoneCB = std::move(cb); }
 
    	 QueueHandle_t rxQueue_ = nullptr;
+   	 QueueHandle_t txQueue_ = nullptr;
+   	 int32_t addressForAck = 0;
     
 private:	
+    inline static const int airRateTable[8] = {
+        2400, 2400, 2400, 4800, 9600, 19200, 38400, 62500
+    };
+    
 	static constexpr const char* TAG = "LoraTask";
 
     static void txTaskEntry(void* arg) {
@@ -155,39 +198,82 @@ private:
         auto* self = static_cast<LoraConnectionTask*>(arg);
         self->rxRun();
     }
+    
+    static void ackToSendTaskEntry(void* arg) {
+        auto* self = static_cast<LoraConnectionTask*>(arg);
+        self->ackToSendRun();
+    }
 
 	void txRun() {
         ESP_LOGI(TAG, "started");
+        uint8_t ackId;
+        bool hasAck = false;
+        LoraMessage m;
+        int retries = 0;
+		int base = 100;
+		int backoff = 0;
         while (true) {
 			if (!waitForAux(2000)) {
 				 ESP_LOGI(TAG, "LoRa TX in progress");
 				 vTaskDelay(pdMS_TO_TICKS(20)); 
 				 continue;
 			}
-			LoraMessage m;
-	        if (isConfigured && txQueue_ && xQueueReceive(txQueue_, &m, 0) == pdTRUE) {
-				vTaskDelay(pdMS_TO_TICKS(4)); 
-				std::array<uint8_t, 3 + LoraMessage::MAX_LEN> buf{};
-
-			    buf[0] = static_cast<uint8_t>((m.dstAddr >> 8) & 0xFF);  // ADDH
-			    buf[1] = static_cast<uint8_t>(m.dstAddr & 0xFF);         // ADDL
-			    buf[2] = static_cast<uint8_t>(channel & 0xFF);        // CHAN
-			    size_t totalLen = std::min(m.len, m.data.size()) + 3;
-			    memcpy(buf.data() + 3, m.data.data(), std::min(m.len, m.data.size()));
-			    ESP_LOGI(TAG, "LoRa TX started");
-			    ESP_LOG_BUFFER_HEX(TAG, buf.data(), totalLen);
-			    uart_write_bytes(LORA_UART_NUM, buf.data(), totalLen);
-			    if(waitForAux(250)) {
-			    	ESP_LOGI(TAG, "LoRa TX done, destAddr=0x%04X, chan=%ld, len=%zu", m.dstAddr, static_cast<long>(channel), m.len);
-			    } else {
-					ESP_LOGI(TAG, "LoRa TX in progress, destAddr=0x%04X, chan=%ld, len=%zu", m.dstAddr, static_cast<long>(channel), m.len);
-				};
-				if(_txDoneCB && waitForAux(2000) && uxQueueSpacesAvailable(txQueue_) > 0) {
-					_txDoneCB();
-				}
-			} else if (txQueue_ && m.len > 0){
-				xQueueSendToFront(txQueue_, &m, 0);
-			    ESP_LOGW(TAG, "LoRa not ready for TX");
+			if (isConfigured && txQueue_) {
+		         if(xQueueReceive(txQueue_, &m, 0) == pdTRUE) {
+					retries = 0;
+					vTaskDelay(pdMS_TO_TICKS(4)); 
+					std::array<uint8_t, 6 + LoraMessage::MAX_LEN> buf{};
+	
+				    buf[0] = static_cast<uint8_t>((m.dstAddr >> 8) & 0xFF);  // ADDH
+				    buf[1] = static_cast<uint8_t>(m.dstAddr & 0xFF);         // ADDL
+				    buf[2] = static_cast<uint8_t>(channel & 0xFF);        // CHAN
+				    buf[3] = m.type;
+				    buf[4] = m.msgId; 
+					buf[5] = static_cast<uint8_t>(m.len); ;
+				    size_t totalLen = m.len + 6;
+				    memcpy(buf.data() + 6, m.data.data(), m.len);
+				    ESP_LOGI(TAG, "LoRa TX started: dst=0x%04X, chan=%" PRId32 ", type=0x%02X, msgId=%u, len=%zu",
+					         m.dstAddr,
+					         channel,         
+					         m.type,
+					         m.msgId,
+					         totalLen);
+				    ESP_LOG_BUFFER_HEX(TAG, buf.data(), totalLen);
+	   				while (xQueueReceive(ackQueue_, &ackId, 0) == pdTRUE) {}
+	   				if(m.type == 1) hasAck = false; else hasAck = true;
+	   				do {
+						retries++;
+						if(retries > 1) ESP_LOGI(TAG, "Lora TX retry %d", retries);
+						if(retries > 5) retries = 5;
+						xSemaphoreTake(mutex, portMAX_DELAY);
+					    uart_write_bytes(LORA_UART_NUM, buf.data(), totalLen);
+					    xSemaphoreGive(mutex);
+					    if(waitForAux(250)) {
+					    	ESP_LOGI(TAG, "LoRa TX done, destAddr=0x%04X, chan=%ld,  msgId=%u, len=%zu", m.dstAddr, static_cast<long>(channel),  m.msgId, totalLen);
+					    } else {
+							ESP_LOGI(TAG, "LoRa TX in progress, destAddr=0x%04X, chan=%ld, len=%zu", m.dstAddr, static_cast<long>(channel), totalLen);
+						};
+						if(!hasAck) {
+						    if(xQueueReceive(ackQueue_, &ackId,  pdMS_TO_TICKS(2000)) == pdTRUE) {
+								hasAck = (ackId == m.msgId);
+							} else {
+								hasAck = false;
+								ESP_LOGI(TAG, "Ack for msgId=%u false",  m.msgId);
+							}
+							if(hasAck) {
+								ESP_LOGI(TAG, "Ack for msgId=%u true", m.msgId);
+							} else {
+								ESP_LOGE(TAG, "Ack for msgId=%u false", m.msgId);
+							}
+						}
+						backoff = (rand() % (1 << retries)) * base;
+						vTaskDelay(pdMS_TO_TICKS(backoff));
+					} while(!hasAck);
+				
+					if(_txDoneCB && waitForAux(2000) && uxQueueSpacesAvailable(txQueue_) > 0) {
+						_txDoneCB();
+					}
+				} 
 			}
            
             
@@ -213,16 +299,56 @@ private:
 	    }
     }
     
+    void ackToSendRun() {
+        ESP_LOGI(TAG, "ack to send started");
+        LoraMessage m;
+        std::array<uint8_t, 6> buf{};
+        while (true) {
+			if (!waitForAux(2000)) {
+				 ESP_LOGI(TAG, "LoRa TX in progress");
+				 vTaskDelay(pdMS_TO_TICKS(20)); 
+				 continue;
+			}
+	        if (isConfigured && ackToSendQueue_ && xQueueReceive(ackToSendQueue_, &m, 0) == pdTRUE) {
+				vTaskDelay(pdMS_TO_TICKS(4)); 
+			    buf[0] = static_cast<uint8_t>((m.dstAddr >> 8) & 0xFF);  // ADDH
+			    buf[1] = static_cast<uint8_t>(m.dstAddr & 0xFF);         // ADDL
+			    buf[2] = static_cast<uint8_t>(channel & 0xFF);        // CHAN
+			    buf[3] = 0x02;
+			    buf[4] = m.msgId; 
+				buf[5] = 0;
+			    size_t totalLen = 6;
+			    ESP_LOGI(TAG, "LoRa ack TX started: dst=0x%04X, chan=%" PRId32 ", type=0x%02X, msgId=%u",
+				         m.dstAddr,
+				         channel,         
+				         m.type,
+				         m.msgId);
+			    ESP_LOG_BUFFER_HEX(TAG, buf.data(), totalLen);
+			    xSemaphoreTake(mutex, portMAX_DELAY);
+			    vTaskDelay(pdMS_TO_TICKS(30));
+			    uart_write_bytes(LORA_UART_NUM, buf.data(), totalLen);
+			    vTaskDelay(pdMS_TO_TICKS(30));
+			    xSemaphoreGive(mutex);
+			    if(waitForAux(250)) {
+				    ESP_LOGI(TAG, "LoRa ack TX done, destAddr=0x%04X, chan=%ld", m.dstAddr, static_cast<long>(channel));
+				} else {
+					ESP_LOGI(TAG, "LoRa ack TX in progress, destAddr=0x%04X, chan=%ld", m.dstAddr, static_cast<long>(channel));
+				};
+			}            
+		   	vTaskDelay(pdMS_TO_TICKS(20)); 
+	    }
+    }
+    
     void rxRun() {
 	    ESP_LOGI(TAG, "RX task started");
 	    std::array<uint8_t, 256> buf{};
-	    
+	    int len = 0;
 	    while (true) {
 			if(isConfigured) {
-		        int len = uart_read_bytes(LORA_UART_NUM,
-                                      buf.data(),
-                                      buf.size(),
-                                      33 / portTICK_PERIOD_MS);
+		        len = len +  uart_read_bytes(LORA_UART_NUM,
+                                      buf.data() + len,
+                                      buf.size() - len,
+                                      25 / portTICK_PERIOD_MS);
 
 	            if (len > 0) {
 	                for (;;) {
@@ -231,23 +357,65 @@ private:
 	                    int more = uart_read_bytes(LORA_UART_NUM,
 	                                               buf.data() + len,
 	                                               buf.size() - len,
-	                                               20 / portTICK_PERIOD_MS);
+	                                               10 / portTICK_PERIOD_MS);
 	                    if (more <= 0) break;
 	                    len += more;
 	                }
+	                if (len < 3) {
+					    continue; 
+					}
 	                
 	                ESP_LOGI(TAG, "Lora RX: %d bytes", len);
 	                ESP_LOG_BUFFER_HEX(TAG, buf.data(), len);
 	                lastSuccessTick = xTaskGetTickCount();
-		            LoraMessage m;
-		            size_t payloadLen = len;
-    				m.len = std::min(payloadLen, m.data.size());
-					memcpy(m.data.data(), buf.data(), m.len);
-               	 
+					uint8_t payloadLen = buf[2];
+					
+					if (len < 3 + payloadLen) {
+        				continue; 
+    				}
+    				LoraMessage m;
+		            m.type = buf[0];
+					m.msgId = buf[1];
+					m.len = payloadLen;
+					ESP_LOGI(TAG, "RX header: type=0x%02X (%s), msgId=%u",
+					         m.type,
+					         (m.type == 0x00 ? "MSG_NO_ACK" :
+					         (m.type == 0x01 ? "MSG_WITH_ACK" :
+					         (m.type == 0x02 ? "ACK" : "???"))),
+					         m.msgId);
+					memcpy(m.data.data(), buf.data() + 3, m.len);
+               	    len = len - payloadLen - 3;
+               	    if(len > 0) {
+						size_t shift = payloadLen + 3;
+						if (shift < buf.size()) {
+						    std::memmove(buf.data(),
+						                 buf.data() + shift,
+						                 buf.size() - shift);
+						} else {
+						    len = 0;
+						}   
+					}
+               	    if(m.type == 0x02) {
+						if (ackQueue_) {
+					        xQueueSend(ackQueue_, &m.msgId, portMAX_DELAY);
+					    }
+					    ESP_LOGI(TAG, "Got ACK for msgId=%u", m.msgId);
+						continue;
+				    };
+               	    if(m.type == 0x01 && addressForAck > 0) {
+						LoraMessage ack;
+					    ack.type = 0x02;
+					    ack.msgId = m.msgId;
+					    ack.dstAddr = addressForAck;
+					    ack.len = 0;
+					    xQueueSend(ackToSendQueue_, &ack, portMAX_DELAY);   
+					}
 		            if (rxQueue_) {
 		                xQueueSend(rxQueue_, &m, portMAX_DELAY);
 		            }
-		        }
+		        } else {
+					//ESP_LOGW(TAG, "NO RX %s", isReady() ? "ready" : "busy");
+				}
 	        }
 	        vTaskDelay(pdMS_TO_TICKS(10));
 	    }
@@ -292,16 +460,18 @@ private:
 	    uint8_t addl = address & 0xFF;
 	    uint8_t chan = channel & 0xFF;
 	
+	    reg5 = setLow3Bits(0b01100000, 0);
+	    ESP_LOGI(TAG, "reg5 = 0x%02X", reg5);
 	    uint8_t cfg[11] = {
 	        0xC0, 
 	        0x00,
 	        0x08,
 	        addh, 
 	        addl, 
-	        0x67, //0x62 2400bps,
+	        reg5, //0x62 2400bps,
 	        0x00,
 	        chan,
-	        0x43,
+	        0x53, //0x43 - disable LBT, 0x53 - enable LBT
 	        0x00,
 	        0x00
 	    };
@@ -350,14 +520,24 @@ private:
 	    }
 	    return false;
 	}
+	
+    
+	inline uint8_t setLow3Bits(uint8_t byte, uint8_t value) {
+	    return (byte & ~0b111) | (value & 0b111);
+	}
 
 	paramstore::ParameterStore& store_;
     TaskHandle_t txTaskHandle_ = nullptr;
     TaskHandle_t rxTaskHandle_ = nullptr;
-    QueueHandle_t txQueue_ = nullptr;
+    TaskHandle_t ackToSendTaskHandle_ = nullptr;
+    QueueHandle_t ackToSendQueue_ = nullptr;
+    QueueHandle_t ackQueue_ = nullptr;
+    SemaphoreHandle_t mutex = xSemaphoreCreateMutex();
     volatile bool isConfigured = false;
     volatile TickType_t lastSuccessTick = 0;
     int32_t address = 1;
     int32_t channel = 18;
     TxDoneCallback _txDoneCB;
+    uint8_t nextMsgId_ = 0;
+    uint8_t reg5;
 };

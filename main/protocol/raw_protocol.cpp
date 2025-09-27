@@ -52,7 +52,7 @@ void RawProtocol::appendReceived(const uint8_t* data, size_t len) {
     }
 }
 
-bool RawProtocol::send(const uint8_t* data, size_t len) {
+bool RawProtocol::send(bool withAck, const uint8_t* data, size_t len) {
     if (xSemaphoreTake(sendReady, pdMS_TO_TICKS(5000)) == pdFALSE) {
         ESP_LOGW(TAG, "Send blocked: handshake not complete");
         return false;
@@ -62,12 +62,12 @@ bool RawProtocol::send(const uint8_t* data, size_t len) {
     frame.reserve(1 + len);
     frame.push_back(static_cast<uint8_t>(len));
     frame.insert(frame.end(), data, data + len);
-    writeCb(frame.data(), frame.size());
+    writeCb(withAck, frame.data(), frame.size());
     return true;
 }
 
 void RawProtocol::sendCode(uint8_t code) {
-    writeCb(&code, 1);
+    writeCb(true, &code, 1);
 }
 
 void RawProtocol::sendHandshake() {     
@@ -88,7 +88,7 @@ void RawProtocol::sendHandshake() {
     frame.push_back(headerLen);
     frame.push_back(len);
     frame.insert(frame.end(), buffer, buffer + len);
-    writeCb(frame.data(), frame.size());
+    writeCb(true, frame.data(), frame.size());
 }
 
 bool RawProtocol::parseHandshake(const std::vector<uint8_t>& frame) {

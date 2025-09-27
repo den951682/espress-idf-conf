@@ -17,6 +17,7 @@ extern "C" {
 }
 
 struct SendItem {
+	bool withAck;
     std::vector<uint8_t> data;
 };
 
@@ -55,12 +56,13 @@ public:
     void stop();
 
     // Send API
-    ssize_t sendBytes(const uint8_t* data, size_t len);
+    ssize_t sendBytes(bool withAck, const uint8_t* data, size_t len);
     ssize_t sendString(const std::string& s);
     ssize_t sendLine(const std::string& s); 
-    bool enqueueSend(const uint8_t* data, size_t len);
-    ssize_t writeAll(const uint8_t* data, size_t len);
+    bool enqueueSend(bool withAck, const uint8_t* data, size_t len);
+    ssize_t writeAll(bool withAck, const uint8_t* data, size_t len);
     bool isReady();
+    uint32_t estimateTxTimeMs(size_t payloadLen);
 
 private:
     static constexpr size_t MAX_ACCUM = 8 * 1024;

@@ -9,7 +9,7 @@ public:
 
     void init(WriteCallback writeCb, QueueCallback recvCb) override;
     void appendReceived(const uint8_t* data, size_t len) override;
-    bool send(const uint8_t* data, size_t len) override;
+    bool send(bool withAck, const uint8_t* data, size_t len) override;
 
 private:
     bool handshakeReceived = false;

@@ -7,6 +7,8 @@
 #include <set>
 #include "freertos/semphr.h"
 #include <inttypes.h>
+#include <algorithm>
+#include <random>
 
 enum class ParamSetType : uint8_t {
     SetInt     = 0x04,
@@ -34,10 +36,10 @@ using SetParameterCallback = std::function<void(const SetParam& setParam)>;;
 
 class ParameterSync {
 public:
-    ParameterSync(paramstore::ParameterStore& store) : store_(store)
+    ParameterSync(paramstore::ParameterStore& store) : rng_(std::random_device{}()), store_(store)
     {
         store_.onAnyChange([this](uint32_t id, const paramstore::Value& val){
-        	enqueueId(id);
+			enqueueId(id);
         });
         startTask();
     }
@@ -158,7 +160,7 @@ public:
 			bool sent = false;
 			while (!sent) {
 			    if (resetFlag_[connType]) return;
-			    sent = connection_[connType]->enqueueSend(buffer, ostream.bytes_written + 1);
+			    sent = connection_[connType]->enqueueSend(true, buffer, ostream.bytes_written + 1);
 			    if (!sent) {
 			        vTaskDelay(pdMS_TO_TICKS(20));
 			    }
@@ -213,6 +215,7 @@ public:
     }
 
 private:
+	std::mt19937 rng_; 
     static constexpr const char* TAG = "ParameterSync";
     SemaphoreHandle_t mutex = xSemaphoreCreateMutex();
     paramstore::ParameterStore& store_;
@@ -271,34 +274,54 @@ private:
     
     void updateChangedParameters(uint32_t connId) {
 	    xSemaphoreTake(mutex, portMAX_DELAY);
-	    auto idsCopy = toSyncIds_[connId];
+	    std::vector<uint32_t> idsVec(toSyncIds_[connId].begin(), toSyncIds_[connId].end());
 	    xSemaphoreGive(mutex);
 		uint8_t tmp[128];
-		//ESP_LOGI(TAG, "idsCopy size=%u", (unsigned)idsCopy.size());
-		for (uint32_t id : idsCopy) {
-		    ESP_LOGI(TAG, "idsCopy element=%u", (unsigned)id);
+		//ESP_LOGI(TAG, "idsVec size=%u", (unsigned)idsVec.size());
+		/*for (uint32_t id : idsVec) {
+		    ESP_LOGI(TAG, "idsVec element=%u", (unsigned)id);
+		}*/
+		std::shuffle(idsVec.begin(), idsVec.end(), rng_);
+		for (int phase = 0; phase < 2; ++phase) {
+		    for (uint32_t paramId : idsVec) {
+		        const auto& entry = store_.get(paramId);
+		        bool canLoss = entry.meta.canLoss;
+		        if ((phase == 0 && canLoss) || (phase == 1 && !canLoss)) {
+		            continue;
+		        }
+		        size_t written = writeParameterValue(paramId, entry.value, tmp, sizeof(tmp));
+		        if (written == 0) continue;
+		
+		        bool sent = false;
+		        if (connection_[connId]) {
+		            if (!canLoss) {
+		                do {
+		                    if (resetFlag_[connId]) return;
+		                    //if(paramId == 4 || paramId == 5) ESP_LOGE(TAG, "try send %u", static_cast<unsigned int>(paramId));
+		                    sent = connection_[connId]->enqueueSend(true, tmp, written);
+		                    if (!sent) {
+		                        vTaskDelay(pdMS_TO_TICKS(5));//connection_[connId] -> estimateTxTimeMs(5) + 1));
+		                    }
+		                } while (!sent);
+		            } else {
+		                for (int attempt = 0; attempt < 100 && !sent; ++attempt) {
+		                    if (resetFlag_[connId]) return;
+		                    sent = connection_[connId]->enqueueSend(false, tmp, written);
+		                    if (!sent) {
+		                        vTaskDelay(pdMS_TO_TICKS(15));//connection_[connId] -> estimateTxTimeMs(5) + 1));
+		                    }
+		                }
+		            }
+		        }
+		
+		        if (sent || canLoss) {
+		            xSemaphoreTake(mutex, portMAX_DELAY);
+		            toSyncIds_[connId].erase(paramId);
+		            xSemaphoreGive(mutex);
+		        }
+		        vTaskDelay(pdMS_TO_TICKS(connection_[connId] -> estimateTxTimeMs(256) + 1));
+		    }
 		}
-		for (uint32_t paramId : idsCopy) {
-	    	const auto& entry = store_.get(paramId);
-	        size_t written = writeParameterValue(paramId, entry.value, tmp, sizeof(tmp));
-	        if (written == 0) continue; 
-
-        	bool sent = false;
-        	if (connection_[connId]) {
-	            do {
-	                if (resetFlag_[connId]) return;  
-	                sent = connection_[connId] -> enqueueSend(tmp, written);
-	                if (!sent/* && !entry.meta.canLoss*/) {
-	                    vTaskDelay(pdMS_TO_TICKS(5));
-	                }
-	            } while (!sent/* && !entry.meta.canLoss*/);
-	        }
-			if (sent || entry.meta.canLoss) {
-				xSemaphoreTake(mutex, portMAX_DELAY);
-	            toSyncIds_[connId].erase(paramId);
-	            xSemaphoreGive(mutex);
-	        }
-	    }
 	}
     
     void sendAllParametersInfoInternal(int connType) {

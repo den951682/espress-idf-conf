@@ -59,7 +59,7 @@ void PassphraseAesProtocol::appendReceived(const uint8_t* data, size_t len) {
     }
 }
 
-bool PassphraseAesProtocol::send(const uint8_t* data, size_t len) {
+bool PassphraseAesProtocol::send(bool withAck, const uint8_t* data, size_t len) {
 	if(isClosed.load()) {
 		ESP_LOGI(TAG, "PassphraseAesProtocol send after close");
 		return false;
@@ -75,7 +75,7 @@ bool PassphraseAesProtocol::send(const uint8_t* data, size_t len) {
     buf.push_back(static_cast<uint8_t>(encrypted.size()));
     buf.insert(buf.end(), encrypted.begin(), encrypted.end());
     if(!isClosed.load()) {
-    	writeCb(buf.data(), buf.size());
+    	writeCb(withAck, buf.data(), buf.size());
     }
     return true;
 }
@@ -86,7 +86,7 @@ void PassphraseAesProtocol::sendCode(uint8_t code) {
 		return;
 	}
 	if(!isClosed.load()){
-    	writeCb(&code, 1);
+    	writeCb(true, &code, 1);
     }
 }
 
@@ -111,7 +111,7 @@ void PassphraseAesProtocol::sendHandshake() {
 	out.push_back(static_cast<uint8_t>(0));
 	out.push_back(static_cast<uint8_t>(enc.size())); 
 	out.insert(out.end(), enc.begin(), enc.end());  
-	writeCb(out.data(), out.size());
+	writeCb(true, out.data(), out.size());
 }
 
 bool PassphraseAesProtocol::parseHandshake(const std::vector<uint8_t>& frame) {

@@ -130,7 +130,7 @@ static void setupLoraRouter() {
 	loraRouter.setOnMessageCallback([](const uint8_t* data, size_t len) {
 	    ESP_LOGI("App", "Got LoRa packet len=%u", (unsigned)len);
 	    if(g_conn[CONN_BLUETOOTH]) {
-        	g_conn[CONN_BLUETOOTH] -> writeAll(data, len);
+        	g_conn[CONN_BLUETOOTH] -> writeAll(false, data, len);
         }
 	});
 	loraRouter.setOnDataSourceCallback([](DataSource* dataSource) {
@@ -149,7 +149,7 @@ static void sendMessageToConnection(int connType, const char* text) {
 	buffer[0] = static_cast<uint8_t>(MessageType::Message);
 	pb_encode(&ostream, pModel_Message_fields, &msg);	
 	if(g_conn[connType]) {
-        g_conn[connType] -> enqueueSend(buffer, ostream.bytes_written + 1);
+        g_conn[connType] -> enqueueSend(true, buffer, ostream.bytes_written + 1);
     }
 }
 
@@ -192,7 +192,7 @@ void appTask(void* arg) {
 				case AppCommandType::CleanupConnection:
     				if (g_conn[cmd -> meta]) {
 						g_conn[cmd -> meta] -> stop();
-						delete g_conn[cmd -> meta];
+					delete g_conn[cmd -> meta];
 						g_conn[cmd -> meta] = nullptr;
 					}
     				break;

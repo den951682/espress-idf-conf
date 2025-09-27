@@ -51,7 +51,7 @@ void EcdhAesProtocol::appendReceived(const uint8_t* data, size_t len) {
     }
 }
 
-bool EcdhAesProtocol::send(const uint8_t* data, size_t len) {
+bool EcdhAesProtocol::send(bool withAck, const uint8_t* data, size_t len) {
     if (xSemaphoreTake(sendReady, pdMS_TO_TICKS(5000)) == pdFALSE) {
         ESP_LOGW(TAG, "Send blocked: handshake not complete");
         return false;
@@ -62,12 +62,12 @@ bool EcdhAesProtocol::send(const uint8_t* data, size_t len) {
     buf.reserve(1 + encrypted.size());
     buf.push_back(static_cast<uint8_t>(encrypted.size()));
     buf.insert(buf.end(), encrypted.begin(), encrypted.end());
-    writeCb(buf.data(), buf.size());
+    writeCb(withAck, buf.data(), buf.size());
     return true;
 }
 
 void EcdhAesProtocol::sendCode(uint8_t code) {
-    writeCb(&code, 1);
+    writeCb(true, &code, 1);
 }
 
 void EcdhAesProtocol::sendHandshake() {
@@ -92,7 +92,7 @@ void EcdhAesProtocol::sendHandshake() {
     frame.push_back(headerLen);
     frame.push_back(len);
     frame.insert(frame.end(), buffer, buffer + len);
-    writeCb(frame.data(), frame.size());
+    writeCb(true, frame.data(), frame.size());
 }
 
 bool EcdhAesProtocol::parseHandshake(const std::vector<uint8_t>& frame) {

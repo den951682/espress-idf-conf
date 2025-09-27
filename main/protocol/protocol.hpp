@@ -10,7 +10,7 @@ class Protocol {
 public:
     using ReadyCallback = std::function<void()>;
     using QueueCallback = std::function<void(std::vector<uint8_t>)>;
-    using WriteCallback = std::function<void(const uint8_t* data, size_t len)>;
+    using WriteCallback = std::function<void(bool withAck, const uint8_t* data, size_t len)>;
 
     Protocol() {
         sendReady = xSemaphoreCreateBinaryStatic(&sendReadyStorage_);
@@ -33,7 +33,7 @@ public:
 
     virtual void appendReceived(const uint8_t* data, size_t len) = 0;
 
-    virtual bool send(const uint8_t* data, size_t len) = 0;
+    virtual bool send(bool withAck, const uint8_t* data, size_t len) = 0;
     
     void close() { 
 		isClosed.store(true);

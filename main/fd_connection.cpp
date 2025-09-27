@@ -61,7 +61,6 @@ esp_err_t FdConnection::start() {
     _running.store(true);
     _guarded.store(false);
     protocol = /*std::make_unique<EcdhAesProtocol>(_passPhrase);*/createProtocol(_passPhrase);
-    ESP_LOGI(TAG, "protocol new=%p", protocol.get());
     protocol.get() -> setReadyCallback([this](){if(_readyCallback) _readyCallback();});
 	sendQueue = xQueueCreate(1, sizeof(SendItem*));
     startSendTask();
@@ -107,14 +106,14 @@ void FdConnection::stop() {
    if (!_closeCbSent.exchange(true) && _closeCB) _closeCB();
 }
 
-ssize_t FdConnection::writeAll(const uint8_t* data, size_t len) {
+ssize_t FdConnection::writeAll(bool withAck, const uint8_t* data, size_t len) {
 	//ESP_LOGI(TAG, "writeAll %u", (unsigned) len);
 	//ESP_LOG_BUFFER_HEX(TAG, data, len);
     size_t total = 0;
     DataSource* ds = _dataSource.load();
     if (!ds) return -1;
     while (total < len) {
-        ssize_t n = ds -> write(data + total, len - total);
+        ssize_t n = ds -> write(withAck, data + total, len - total);
         if (n > 0) {
             total += static_cast<size_t>(n);
             continue;
@@ -140,34 +139,34 @@ bool FdConnection::isReady() {
 	}
 }
 
-ssize_t FdConnection::sendBytes(const uint8_t* data, size_t len) {
+ssize_t FdConnection::sendBytes(bool withAck, const uint8_t* data, size_t len) {
     if (!data || len == 0) return 0;
     std::lock_guard<std::mutex> lock(_writeMtx);
-    return writeAll(data, len);
+    return writeAll(withAck, data, len);
 }
 
 ssize_t FdConnection::sendString(const std::string& s) {
 	if(_guarded) return -1;
-    return sendBytes(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+    return sendBytes(false, reinterpret_cast<const uint8_t*>(s.data()), s.size());
 }
 
 ssize_t FdConnection::sendLine(const std::string& s) {
 	if(_guarded) return -1;
     std::lock_guard<std::mutex> lock(_writeMtx);
-    ssize_t a = writeAll(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+    ssize_t a = writeAll(false, reinterpret_cast<const uint8_t*>(s.data()), s.size());
     if (a < 0) return a;
     const char nl = '\n';
-    ssize_t b = writeAll(reinterpret_cast<const uint8_t*>(&nl), 1);
+    ssize_t b = writeAll(false, reinterpret_cast<const uint8_t*>(&nl), 1);
     return (b == 1) ? (a + 1) : -1;
 }
 
-bool FdConnection::enqueueSend(const uint8_t* data, size_t len) {
+bool FdConnection::enqueueSend(bool withAck, const uint8_t* data, size_t len) {
 	if(_running.load()){
 		if (uxQueueSpacesAvailable(sendQueue) == 0) {
 			//ESP_LOGI(TAG, "enqueueSend queue is full");
 	        return false;
 	    }
-    	auto* item = new SendItem{std::vector<uint8_t>(data, data + len)};
+    	auto* item = new SendItem{withAck, std::vector<uint8_t>(data, data + len)};
     	if (xQueueSend(sendQueue, &item, 0) == pdTRUE) {
 			//ESP_LOGI(TAG, "enqueueSend success %u bytes", (unsigned) len);
             return true;  
@@ -231,8 +230,8 @@ void FdConnection::taskLoop() {
 
                     if(line.ends_with("guard")) {
 						protocol.get()->init(
-			    			[this](const uint8_t* data, size_t len) {
-			       					 	FdConnection::sendBytes(data, len);
+			    			[this](bool withAck, const uint8_t* data, size_t len) {
+			       					 	FdConnection::sendBytes(withAck, data, len);
 			    					 },
 			    			[this](std::vector<uint8_t> msg) {
 			       					 	ESP_LOGI("FdConnection", "Got message size=%u, data=%s", msg.size(), toHex(msg).c_str());
@@ -296,7 +295,7 @@ void FdConnection::sendTask(void* arg) {
         if (xQueueReceive(self->sendQueue, &item, portMAX_DELAY) == pdTRUE) {
 			if (!item) break;
 			ESP_LOGI(TAG, "SendTask got item, length=%zu", item->data.size());
-			if(self -> protocol.get() && self -> _running) self->protocol.get()->send(item->data.data(), item->data.size());
+			if(self -> protocol.get() && self -> _running) self->protocol.get()->send(item -> withAck, item->data.data(), item->data.size());
             delete item;
         }
     }
@@ -337,6 +336,14 @@ void FdConnection::moveFrom(FdConnection& other) noexcept {
     protocol = std::move(other.protocol);
 }
 
+uint32_t FdConnection::estimateTxTimeMs(size_t payloadLen) {
+	DataSource* ds = _dataSource.load();
+    if (ds) { 
+		return ds -> estimateTxTimeMs(payloadLen);
+	} else {
+		return 1;
+	}
+}
 
 std::string FdConnection::toHex(const std::vector<uint8_t>& data) {
     std::ostringstream oss;
